@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Sequence, Self
 from dataclasses import dataclass
 import logging
+import struct
 from time import sleep
 
 try:
@@ -13,6 +14,7 @@ log = logging.getLogger("XMOSDeviceCntrl")
 
 MAX_SPI_TRANSFER_LEN = 256
 
+
 class DeviceCntrlConfig(BaseModel):
     bus: int = 0
     dev: int = 0
@@ -21,18 +23,20 @@ class DeviceCntrlConfig(BaseModel):
     bits_per_word: int = 8
     status_reg_len: int = 4
 
-class CntrlProto():
+
+class CntrlProto:
     CMD_READ_BIT = 0x80
     CNTRL_RES_ID = 0x01
-    
+
     RET_DATA_LENGTH_ERROR = 0x03
     RET_DATA_BAD_RESOURCE = 0x05
     RET_IGNORED_IN_DEVICE = 0x07
-    
+
     RET_PAYLOAD_AVAILABLE = 0x17
 
+
 @dataclass
-class DeviceCntrlCMD():
+class DeviceCntrlCMD:
     resource_id: int
     command_id: int
     payload_len: int
@@ -48,24 +52,69 @@ class DeviceCntrlCMD():
             )
 
 
-class DFU_SERVICER():
-    CMD_GET_VERSION = DeviceCntrlCMD(240, 88 | CntrlProto.CMD_READ_BIT , 5 )
+class DFU_SERVICER:
+    CMD_GET_VERSION = DeviceCntrlCMD(240, 88 | CntrlProto.CMD_READ_BIT, 5)
 
-class MAIN_SERVICER():
+
+class MAIN_SERVICER:
     CMD_NO_OP = DeviceCntrlCMD(0, 0, 0)
 
-class AUDIO_CFG_SERVICER():
-    CMD_MIC_LEFT_SELECT = DeviceCntrlCMD( 30, 10, 1 )
-    CMD_MIC_RIGHT_SELECT = DeviceCntrlCMD( 30, 11, 1 )
 
-class SPI_ECHO_SERVICER():
-    CMD_SET = DeviceCntrlCMD(37, 10, 128 )
-    CMD_GET = DeviceCntrlCMD(37, 11 | CntrlProto.CMD_READ_BIT, 128 )    
+class AUDIO_CFG_SERVICER:
+    CMD_MIC_LEFT_SELECT = DeviceCntrlCMD(30, 10, 1)
+    CMD_MIC_RIGHT_SELECT = DeviceCntrlCMD(30, 11, 1)
+
+
+class AUDIO_PIPELINE_CONTROL:
+    MIC_OUTPUT_SETTINGS_RES_ID = 230
+    SPEAKER_SETTINGS_RES_ID = 231
+    MIC_INPUT_SETTINGS_RES_ID = 232
+
+    CMD_GET_SETTINGS = 0 | CntrlProto.CMD_READ_BIT
+    CMD_SET_SETTINGS_PARTIAL = 1
+
+    MIC_OUTPUT_I2S_CHANNEL_COUNT = 2
+    MIC_OUTPUT_PACKED_CHANNEL_COUNT = 6
+
+    MIC_OUTPUT_FIELD_PACK_ENABLE = 1 << 2
+    MIC_OUTPUT_FIELD_I2S_CHANNEL_MAP = 1 << 3
+    MIC_OUTPUT_FIELD_PACKED_CHANNEL_MAP = 1 << 4
+
+    SPEAKER_FIELD_EQ_ENABLED = 1 << 0
+    SPEAKER_FIELD_EQ_PROFILE_ID = 1 << 1
+
+    MIC_INPUT_FIELD_MIC_GAIN = 1 << 0
+    MIC_INPUT_FIELD_REF_GAIN = 1 << 1
+
+
+@dataclass(frozen=True)
+class MicOutputSettings:
+    pack_extra_upsample_channels: int
+    i2s_channel_map: tuple[int, int]
+    upsample_channel_map: tuple[int, int, int, int, int, int]
+
+
+@dataclass(frozen=True)
+class SpeakerSettings:
+    eq_enabled: int
+    eq_profile_id: int
+
+
+@dataclass(frozen=True)
+class MicInputSettings:
+    mic_gain: int
+    ref_gain: int
+
+
+class SPI_ECHO_SERVICER:
+    CMD_SET = DeviceCntrlCMD(37, 10, 128)
+    CMD_GET = DeviceCntrlCMD(37, 11 | CntrlProto.CMD_READ_BIT, 128)
+
 
 @dataclass
 class DeviceCntrlStatusRegister:
     device_status: int
-    gpio_port_a: int 
+    gpio_port_a: int
     gpio_port_b: int
 
     @classmethod
@@ -73,8 +122,7 @@ class DeviceCntrlStatusRegister:
         return cls(*map(int, data[:3]))
 
 
-
-class XMOSDeviceCntrl():
+class XMOSDeviceCntrl:
     def __init__(self, cfg: DeviceCntrlConfig | None = None) -> None:
         self.cfg = cfg or DeviceCntrlConfig()
         self.spi_bus = self.cfg.bus
@@ -86,14 +134,14 @@ class XMOSDeviceCntrl():
 
         self._spi = None
         self.dc_status_register_ = bytearray(self.status_reg_len)
-    
+
     def open(self) -> None:
         if self._spi is not None:
             return
         if spidev is None:  # pragma: no cover
             raise RuntimeError("spidev not available")
         spi = spidev.SpiDev()
-        spi.open(self.spi_bus, self.spi_dev)   # e.g., /dev/spidev0.0
+        spi.open(self.spi_bus, self.spi_dev)  # e.g., /dev/spidev0.0
         spi.max_speed_hz = self.max_speed_hz
         spi.mode = self.mode
         spi.bits_per_word = self.bits_per_word
@@ -120,8 +168,7 @@ class XMOSDeviceCntrl():
 
     def __exit__(self, *exc):
         self.close()
-    
-    
+
     def dump_config(self) -> dict:
         """Return a small config/status dict (for printing/logging)."""
         return {
@@ -131,9 +178,254 @@ class XMOSDeviceCntrl():
             "bits": self.bits_per_word,
             "reg_len": self.status_reg_len,
         }
-    
-    def send_cmd(self, cmd: DeviceCntrlCMD, payload: bytes | bytearray | None = None) -> tuple[bool, bytes | None]:
+
+    def send_cmd(
+        self, cmd: DeviceCntrlCMD, payload: bytes | bytearray | None = None
+    ) -> tuple[bool, bytes | None]:
         return self.transfer(cmd.resource_id, cmd.command_id, payload, cmd.payload_len)
+
+    @staticmethod
+    def _validate_channel_index(channel_index: int) -> int:
+        if not 0 <= channel_index <= 5:
+            raise ValueError("channel index must be in range 0..5")
+        return channel_index
+
+    @staticmethod
+    def _validate_channel_map(
+        name: str, values: Sequence[int], expected_len: int
+    ) -> tuple[int, ...]:
+        if len(values) != expected_len:
+            raise ValueError(f"{name} must contain {expected_len} values")
+        return tuple(XMOSDeviceCntrl._validate_channel_index(value) for value in values)
+
+    @staticmethod
+    def _validate_bool_u8(name: str, value: bool | int) -> int:
+        if isinstance(value, bool):
+            return int(value)
+        if value in (0, 1):
+            return int(value)
+        raise ValueError(f"{name} must be 0/1 or bool")
+
+    @staticmethod
+    def decode_mic_output_settings(data: bytes) -> MicOutputSettings:
+        if len(data) != 9:
+            raise ValueError(
+                f"expected 9 bytes for mic output settings, got {len(data)}"
+            )
+        unpacked = struct.unpack("<9B", data)
+        return MicOutputSettings(
+            pack_extra_upsample_channels=unpacked[0],
+            i2s_channel_map=(unpacked[1], unpacked[2]),
+            upsample_channel_map=(
+                unpacked[3],
+                unpacked[4],
+                unpacked[5],
+                unpacked[6],
+                unpacked[7],
+                unpacked[8],
+            ),
+        )
+
+    @staticmethod
+    def decode_speaker_settings(data: bytes) -> SpeakerSettings:
+        if len(data) != 2:
+            raise ValueError(f"expected 2 bytes for speaker settings, got {len(data)}")
+        eq_enabled, eq_profile_id = struct.unpack("<2B", data)
+        return SpeakerSettings(eq_enabled=eq_enabled, eq_profile_id=eq_profile_id)
+
+    @staticmethod
+    def decode_mic_input_settings(data: bytes) -> MicInputSettings:
+        if len(data) != 8:
+            raise ValueError(
+                f"expected 8 bytes for mic input settings, got {len(data)}"
+            )
+        mic_gain, ref_gain = struct.unpack("<2i", data)
+        return MicInputSettings(mic_gain=mic_gain, ref_gain=ref_gain)
+
+    @staticmethod
+    def encode_mic_output_partial(
+        *,
+        pack_extra_upsample_channels: bool | int | None = None,
+        i2s_channel_map: Sequence[int] | None = None,
+        upsample_channel_map: Sequence[int] | None = None,
+    ) -> bytes:
+        field_mask = 0
+        pack_enable = 0
+        i2s_map = [0, 0]
+        packed_map = [0] * AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_PACKED_CHANNEL_COUNT
+
+        if pack_extra_upsample_channels is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_FIELD_PACK_ENABLE
+            pack_enable = XMOSDeviceCntrl._validate_bool_u8(
+                "pack_extra_upsample_channels", pack_extra_upsample_channels
+            )
+
+        if i2s_channel_map is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_FIELD_I2S_CHANNEL_MAP
+            validated = XMOSDeviceCntrl._validate_channel_map(
+                "i2s_channel_map",
+                i2s_channel_map,
+                AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_I2S_CHANNEL_COUNT,
+            )
+            i2s_map[:] = validated
+
+        if upsample_channel_map is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_FIELD_PACKED_CHANNEL_MAP
+            validated = XMOSDeviceCntrl._validate_channel_map(
+                "upsample_channel_map",
+                upsample_channel_map,
+                AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_PACKED_CHANNEL_COUNT,
+            )
+            packed_map[:] = validated
+
+        if field_mask == 0:
+            raise ValueError("at least one mic output setting must be provided")
+
+        return struct.pack(
+            "<I9B3x",
+            field_mask,
+            pack_enable,
+            i2s_map[0],
+            i2s_map[1],
+            packed_map[0],
+            packed_map[1],
+            packed_map[2],
+            packed_map[3],
+            packed_map[4],
+            packed_map[5],
+        )
+
+    @staticmethod
+    def encode_speaker_settings_partial(
+        *,
+        eq_enabled: bool | int | None = None,
+        eq_profile_id: int | None = None,
+    ) -> bytes:
+        field_mask = 0
+        enabled_value = 0
+        profile_value = 0
+
+        if eq_enabled is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.SPEAKER_FIELD_EQ_ENABLED
+            enabled_value = XMOSDeviceCntrl._validate_bool_u8("eq_enabled", eq_enabled)
+
+        if eq_profile_id is not None:
+            if not 0 <= eq_profile_id <= 0xFF:
+                raise ValueError("eq_profile_id must fit into one byte")
+            field_mask |= AUDIO_PIPELINE_CONTROL.SPEAKER_FIELD_EQ_PROFILE_ID
+            profile_value = eq_profile_id
+
+        if field_mask == 0:
+            raise ValueError("at least one speaker setting must be provided")
+
+        return struct.pack("<I2B2x", field_mask, enabled_value, profile_value)
+
+    @staticmethod
+    def encode_mic_input_settings_partial(
+        *, mic_gain: int | None = None, ref_gain: int | None = None
+    ) -> bytes:
+        field_mask = 0
+        mic_gain_value = 0
+        ref_gain_value = 0
+
+        if mic_gain is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_GAIN
+            mic_gain_value = int(mic_gain)
+
+        if ref_gain is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_REF_GAIN
+            ref_gain_value = int(ref_gain)
+
+        if field_mask == 0:
+            raise ValueError("at least one mic input setting must be provided")
+
+        return struct.pack("<I2i", field_mask, mic_gain_value, ref_gain_value)
+
+    def get_mic_output_settings(self) -> MicOutputSettings:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_SETTINGS,
+            None,
+            9,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read mic output settings")
+        return self.decode_mic_output_settings(data)
+
+    def set_mic_output_settings_partial(
+        self,
+        *,
+        pack_extra_upsample_channels: bool | int | None = None,
+        i2s_channel_map: Sequence[int] | None = None,
+        upsample_channel_map: Sequence[int] | None = None,
+    ) -> bool:
+        payload = self.encode_mic_output_partial(
+            pack_extra_upsample_channels=pack_extra_upsample_channels,
+            i2s_channel_map=i2s_channel_map,
+            upsample_channel_map=upsample_channel_map,
+        )
+        ok, _ = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_SET_SETTINGS_PARTIAL,
+            payload,
+            0,
+        )
+        return ok
+
+    def get_speaker_settings(self) -> SpeakerSettings:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.SPEAKER_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_SETTINGS,
+            None,
+            2,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read speaker settings")
+        return self.decode_speaker_settings(data)
+
+    def set_speaker_settings_partial(
+        self,
+        *,
+        eq_enabled: bool | int | None = None,
+        eq_profile_id: int | None = None,
+    ) -> bool:
+        payload = self.encode_speaker_settings_partial(
+            eq_enabled=eq_enabled,
+            eq_profile_id=eq_profile_id,
+        )
+        ok, _ = self.transfer(
+            AUDIO_PIPELINE_CONTROL.SPEAKER_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_SET_SETTINGS_PARTIAL,
+            payload,
+            0,
+        )
+        return ok
+
+    def get_mic_input_settings(self) -> MicInputSettings:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_SETTINGS,
+            None,
+            8,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read mic input settings")
+        return self.decode_mic_input_settings(data)
+
+    def set_mic_input_settings_partial(
+        self, *, mic_gain: int | None = None, ref_gain: int | None = None
+    ) -> bool:
+        payload = self.encode_mic_input_settings_partial(
+            mic_gain=mic_gain,
+            ref_gain=ref_gain,
+        )
+        ok, _ = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_SET_SETTINGS_PARTIAL,
+            payload,
+            0,
+        )
+        return ok
 
     def transfer(
         self,
@@ -145,7 +437,7 @@ class XMOSDeviceCntrl():
         """
         Perform a command transaction.
         SPI operates in duplex mode for each byte sent, one is received.
-        
+
         Wire format (phase 1):
             [resource_id, command, plen_with_readflag, <payload bytes>, <dummy for status…>]
         If READ bit is set, a second short read is performed:
@@ -157,7 +449,9 @@ class XMOSDeviceCntrl():
         write_payload = bytes(payload) if payload else b""
         write_payload_len = len(write_payload)
         if command & CntrlProto.CMD_READ_BIT:
-            req_payload_len = read_payload_len + 1 #request one more byte for the return status
+            req_payload_len = (
+                read_payload_len + 1
+            )  # request one more byte for the return status
         else:
             req_payload_len = write_payload_len
 
@@ -168,7 +462,7 @@ class XMOSDeviceCntrl():
         tx[1] = command & 0xFF
         tx[2] = req_payload_len & 0xFF
         if write_payload:
-            tx[3:3+write_payload_len] = write_payload
+            tx[3 : 3 + write_payload_len] = write_payload
 
         # Retry up to 3 times if device is busy
         for _ in range(5):
@@ -177,43 +471,48 @@ class XMOSDeviceCntrl():
             if (rx[0] + rx[1] + rx[2]) == 0:
                 log.debug("transfer: no response (sum header == 0)")
                 return (False, None)
-            
-            # Transmission got accepted  
+
+            # Transmission got accepted
             if rx[0] != CntrlProto.RET_IGNORED_IN_DEVICE:
                 break
 
-            sleep(.1)
+            sleep(0.1)
         else:
             # All sending attempts got ignored by the device, give up
             return (False, None)
 
         # Status register report?
-        if rx[0] == CntrlProto.CNTRL_RES_ID and (rx[1] != CntrlProto.RET_PAYLOAD_AVAILABLE): 
-            #[{CNTRL_RES_ID}, {last_cmd_status}] + {status_register}
+        if rx[0] == CntrlProto.CNTRL_RES_ID and (
+            rx[1] != CntrlProto.RET_PAYLOAD_AVAILABLE
+        ):
+            # [{CNTRL_RES_ID}, {last_cmd_status}] + {status_register}
             n = min(self.status_reg_len, len(rx) - 2)
             if n > 0:
-                self.dc_status_register_[:n] = bytes(rx[2:2+n])
+                self.dc_status_register_[:n] = bytes(rx[2 : 2 + n])
 
-        
         if command & CntrlProto.CMD_READ_BIT:
             # If READ command, do second phase to fetch the payload
             for _ in range(10):
-                # send no-op command (0,0,0) for receiving the pending payload        
+                # send no-op command (0,0,0) for receiving the pending payload
                 write_read_len = max(3, req_payload_len)
                 rx2 = self._xfer([0x00] * (write_read_len))
                 # same ignored retry pattern?
                 if rx2[0] == CntrlProto.RET_IGNORED_IN_DEVICE:
-                    sleep(.1)
-                    continue 
-                     
-                data = bytes(rx2[1:1+read_payload_len]) if read_payload_len > 0 else b""
+                    sleep(0.1)
+                    continue
+
+                data = (
+                    bytes(rx2[1 : 1 + read_payload_len])
+                    if read_payload_len > 0
+                    else b""
+                )
                 return (True, data)
-                  
+
             return (False, None)
-        
+
         # WRITE completed
         return (True, None)
-    
+
     def _xfer(self, tx: Sequence[int]) -> list[int]:
         if self._spi is None:
             raise RuntimeError("SPI not open")

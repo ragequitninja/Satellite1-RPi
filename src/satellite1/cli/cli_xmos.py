@@ -4,8 +4,6 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-import time
-
 from ..sat1_hat import XMOS
 
 log = logging.getLogger(__name__)
@@ -34,13 +32,13 @@ def _handle(args: argparse.Namespace) -> int:
 
     # Non-SPI commands
     if args.cmd == "enable-flashing":
-       xmos.set_flash_mode()
-       return 0
-    
+        xmos.set_flash_mode()
+        return 0
+
     if args.cmd == "disable-flashing":
-       xmos.unset_flash_mode()
-       return 0
-    
+        xmos.unset_flash_mode()
+        return 0
+
     if args.cmd == "reset":
         ok = xmos.reset_xmos()
         log.info("Reset: %s", ok)
@@ -52,8 +50,7 @@ def _handle(args: argparse.Namespace) -> int:
         log.info("Flashed %s (verify=%s): %s", args.img, args.verify, ok)
         print(ok)
         return 0 if ok else 1
-    
-    
+
     # SPI Commands
     log.info("Init SPI")
     ok = xmos.setup()
@@ -76,16 +73,13 @@ def _handle(args: argparse.Namespace) -> int:
 
     if args.cmd == "set-mic-output":
         log.info(f"Set mic channels to {args.left} and {args.right}")
-        xmos.set_mic_left_output( args.left )
-        time.sleep(2)
-        xmos.set_mic_right_output( args.right )
-        return 0
-    
+        return 0 if xmos.set_mic_output_channels(args.left, args.right) else 1
+
     if args.cmd == "run-spi-test":
         log.info(f"Starting SPI Test")
         xmos.run_spi_echo_test()
         return 0
-        
+
     return 2
 
 
@@ -102,10 +96,12 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
     sp.add_parser("enable-flashing", help="Put XMOS in reset (flashing mode)")
     sp.add_parser("disable-flashing", help="Exit XMOS reset mode")
     sp.add_parser("run-spi-test", help="Running the SPI echo test")
-    
-    mo = sp.add_parser("set-mic-output", help="Set the output channels of the i2s microphone")
-    mo.add_argument("left", type=int )
-    mo.add_argument("right", type=int )
+
+    mo = sp.add_parser(
+        "set-mic-output", help="Set the output channels of the i2s microphone"
+    )
+    mo.add_argument("left", type=int)
+    mo.add_argument("right", type=int)
 
     f = sp.add_parser("flash-firmware", help="Flash factory image")
     f.add_argument("img", type=Path)
@@ -114,7 +110,12 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(_handler=_handle)
 
 
-def register(parent: argparse._SubParsersAction, *, name: str = "xmos", help: str = "XMOS controls"):
+def register(
+    parent: argparse._SubParsersAction,
+    *,
+    name: str = "xmos",
+    help: str = "XMOS controls",
+):
     """
     Register the XMOS component under `parent` subparsers (hub style).
     """
@@ -125,8 +126,15 @@ def register(parent: argparse._SubParsersAction, *, name: str = "xmos", help: st
 
 # -------- Optional: standalone entrypoint (sat1-xmos) --------
 
+
 def _configure_logging(verbosity: int) -> None:
-    level = logging.WARNING if verbosity <= 0 else logging.INFO if verbosity == 1 else logging.DEBUG
+    level = (
+        logging.WARNING
+        if verbosity <= 0
+        else logging.INFO
+        if verbosity == 1
+        else logging.DEBUG
+    )
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname).1s %(name)s: %(message)s",
@@ -139,8 +147,19 @@ def _configure_logging(verbosity: int) -> None:
 def xmos_main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="sat1-xmos", description="Satellite1 XMOS tools")
     # Keep --config at the root for symmetry with other CLIs even if XMOS ignores it today
-    p.add_argument("--config", type=Path, default=None, help="TOML config (unused for XMOS for now)")
-    p.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity (-v, -vv)")
+    p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="TOML config (unused for XMOS for now)",
+    )
+    p.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (-v, -vv)",
+    )
     attach_to_parser(p)
     args = p.parse_args(argv)
     _configure_logging(args.verbose)

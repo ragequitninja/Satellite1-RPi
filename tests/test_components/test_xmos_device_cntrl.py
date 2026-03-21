@@ -7,7 +7,9 @@ import importlib
 import sys
 
 
-MODULE_NAME = "satellite1.components.xmos_device_cntrl"  # change if your filename differs
+MODULE_NAME = (
+    "satellite1.components.xmos_device_cntrl"  # change if your filename differs
+)
 
 
 def load_module_with_stubbed_spidev():
@@ -21,6 +23,7 @@ def load_module_with_stubbed_spidev():
             self.max_speed_hz = None
             self.mode = None
             self.bits_per_word = None
+            self.last_tx = None
             self._queue = []  # push responses here
 
         def open(self, bus, dev):
@@ -28,6 +31,7 @@ def load_module_with_stubbed_spidev():
             self.args = (bus, dev)
 
         def xfer2(self, tx):
+            self.last_tx = list(tx)
             if self._queue:
                 return list(self._queue.pop(0))
             # default echo-ish: return header + zeros
@@ -52,7 +56,11 @@ def load_module_with_stubbed_spidev():
 
 def test_open_close_sets_spi_and_config():
     mod, spidev_stub = load_module_with_stubbed_spidev()
-    dev = mod.XMOSDeviceCntrl(mod.DeviceCntrlConfig(bus=1, dev=2, max_speed_hz=1_000_000, mode=1, bits_per_word=8))
+    dev = mod.XMOSDeviceCntrl(
+        mod.DeviceCntrlConfig(
+            bus=1, dev=2, max_speed_hz=1_000_000, mode=1, bits_per_word=8
+        )
+    )
     assert dev._spi is None
     dev.open()
     assert dev._spi is not None
@@ -70,7 +78,7 @@ def test_payload_slice_bug_is_fixed():
     dev.open()
     # Queue a single non-ignored response (not RET_IGNORED_IN_DEVICE)
     dev._spi.queue([0x01, 0x00, 0x00, 0, 0, 0, 0])
-    ok, data = dev.transfer(0x10, 0x00, b"\xAA\xBB\xCC", 0)
+    ok, data = dev.transfer(0x10, 0x00, b"\xaa\xbb\xcc", 0)
     assert ok and data is None  # write path
     dev.close()
 
@@ -134,16 +142,19 @@ def test_read_command_second_phase_returns_payload():
     # Phase 1 accepted
     dev._spi.queue([0x02, 0x00, 0x00])
     # Phase 2: payload available, data in rx2[1:1+len]
-    payload = b"\xDE\xAD\xBE\xEF\x01"
+    payload = b"\xde\xad\xbe\xef\x01"
     rx2 = [mod.CntrlProto.RET_PAYLOAD_AVAILABLE] + list(payload) + [0, 0]
     dev._spi.queue(rx2)
-    ok, data = dev.transfer(0xF0, 0x58 | mod.CntrlProto.CMD_READ_BIT, None, read_payload_len=len(payload))
+    ok, data = dev.transfer(
+        0xF0, 0x58 | mod.CntrlProto.CMD_READ_BIT, None, read_payload_len=len(payload)
+    )
     assert ok and data == payload
     dev.close()
 
 
 def test_command_struct_validation():
     from math import inf
+
     mod, _ = load_module_with_stubbed_spidev()
     with pytest.raises(ValueError):
         mod.DeviceCntrlCMD(-1, 0, 0)
@@ -157,3 +168,53 @@ def test_status_dataclass_from_bytes():
     mod, _ = load_module_with_stubbed_spidev()
     sr = mod.DeviceCntrlStatusRegister.from_bytes(b"\x01\x02\x03\x04")
     assert (sr.device_status, sr.gpio_port_a, sr.gpio_port_b) == (1, 2, 3)
+
+
+def test_encode_mic_output_partial_contains_expected_mask_and_padding():
+    mod, _ = load_module_with_stubbed_spidev()
+    payload = mod.XMOSDeviceCntrl.encode_mic_output_partial(
+        i2s_channel_map=(1, 4),
+        upsample_channel_map=(0, 1, 2, 3, 4, 5),
+        pack_extra_upsample_channels=True,
+    )
+    assert len(payload) == 16
+    field_mask = int.from_bytes(payload[:4], "little")
+    assert field_mask == 0x1C
+    assert payload[4:13] == bytes([1, 1, 4, 0, 1, 2, 3, 4, 5])
+    assert payload[13:16] == b"\x00\x00\x00"
+
+
+def test_decode_mic_output_settings_round_trip_shape():
+    mod, _ = load_module_with_stubbed_spidev()
+    settings = mod.XMOSDeviceCntrl.decode_mic_output_settings(
+        bytes([1, 0, 3, 0, 3, 0, 3, 0, 3])
+    )
+    assert settings.pack_extra_upsample_channels == 1
+    assert settings.i2s_channel_map == (0, 3)
+    assert settings.upsample_channel_map == (0, 3, 0, 3, 0, 3)
+
+
+def test_set_mic_output_settings_partial_sends_new_resource_command():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue([0x02, 0x00, 0x00, 0])
+    ok = dev.set_mic_output_settings_partial(i2s_channel_map=(2, 5))
+    assert ok is True
+    assert dev._spi.last_tx[0] == mod.AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_SETTINGS_RES_ID
+    assert dev._spi.last_tx[1] == mod.AUDIO_PIPELINE_CONTROL.CMD_SET_SETTINGS_PARTIAL
+    dev.close()
+
+
+def test_get_mic_output_settings_reads_new_resource_command():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE, 0, 0, 3, 0, 3, 0, 3, 0, 3],
+    )
+    settings = dev.get_mic_output_settings()
+    assert settings.i2s_channel_map == (0, 3)
+    assert settings.pack_extra_upsample_channels == 0
+    dev.close()

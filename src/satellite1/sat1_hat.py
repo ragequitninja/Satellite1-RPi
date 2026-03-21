@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass, field, InitVar, replace
 from typing import Callable, ClassVar
 from pathlib import Path
@@ -14,15 +13,17 @@ import logging
 
 from .components.pcm5122 import PCM5122, PCM5122Config, PCM5122GPIOPin
 from .components.xmos_device_cntrl import (
-    DeviceCntrlConfig, 
-    XMOSDeviceCntrl, 
+    DeviceCntrlConfig,
+    XMOSDeviceCntrl,
     DeviceCntrlStatusRegister as StatusRegister,
+    MicInputSettings,
+    MicOutputSettings,
+    SpeakerSettings,
     DFU_SERVICER,
     MAIN_SERVICER,
-    AUDIO_CFG_SERVICER,
-    SPI_ECHO_SERVICER
+    SPI_ECHO_SERVICER,
 )
-from pydantic import BaseModel, ConfigDict,Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 log = logging.getLogger(__name__)
 
@@ -41,39 +42,41 @@ def _func_name(code: int) -> str:
     return names.get(code, str(code))
 
 
-class XMOS():
+class XMOS:
     CNTRL_STATUS_LENGTH = 4
 
     def __init__(self) -> None:
         cntrl_cfg = DeviceCntrlConfig(
-            bus = 0,
-            dev = 0,
-            max_speed_hz = 8_000_000,
-            mode = 3,
-            bits_per_word = 8,
-            status_reg_len = XMOS.CNTRL_STATUS_LENGTH
+            bus=0,
+            dev=0,
+            max_speed_hz=8_000_000,
+            mode=3,
+            bits_per_word=8,
+            status_reg_len=XMOS.CNTRL_STATUS_LENGTH,
         )
-        
+
         self._cntrl = XMOSDeviceCntrl(cntrl_cfg)
-        self._reset_bcm_pin = 5 # RPi Header 29
+        self._reset_bcm_pin = 5  # RPi Header 29
         self._status = None
         self._firmware: str | None = None
-    
-    def setup(self, init_spi:bool = True) -> None:
+
+    def setup(self, init_spi: bool = True) -> None:
         self._cntrl.open()
-        
+
     def read_firmware(self) -> str | None:
-        ok, data = self._cntrl.send_cmd( DFU_SERVICER.CMD_GET_VERSION )
-        if ok and len(data) == 5:
+        ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
+        if ok and data is not None and len(data) == 5:
             self._firmware = self._fw_from_bytes(data)
             return self._firmware
         return None
-    
-    def read_status(self) -> StatusRegister | None :
-        ok, data = self._cntrl.send_cmd( MAIN_SERVICER.CMD_NO_OP )
-        if ok and len(data) == XMOS.CNTRL_STATUS_LENGTH:
-            self._status = data
-    
+
+    def read_status(self) -> StatusRegister | None:
+        ok, data = self._cntrl.send_cmd(MAIN_SERVICER.CMD_NO_OP)
+        if ok and data is not None and len(data) == XMOS.CNTRL_STATUS_LENGTH:
+            self._status = StatusRegister.from_bytes(data)
+            return self._status
+        return None
+
     def reset_xmos(self) -> bool:
         GPIO.output(self._reset_bcm_pin, GPIO.HIGH)
         time.sleep(0.1)
@@ -81,16 +84,16 @@ class XMOS():
         time.sleep(0.1)
         self._status = "DETACHED"
 
-    def subscribe_status_changes(cb: Callable[[StatusRegister],None] ) -> None:
+    def subscribe_status_changes(cb: Callable[[StatusRegister], None]) -> None:
         pass
-    
-    def _poll(self) -> None :
+
+    def _poll(self) -> None:
         if self._status == "DETACHED":
             if self.read_firmware():
                 self._state = "CNTRL_MODE"
         elif self._status == "CNTRL_MODE":
             self.read_status()
-        
+
     def set_led_states(self) -> None:
         pass
 
@@ -103,7 +106,9 @@ class XMOS():
             GPIO.setwarnings(False)
             log.debug("GPIO.setmode(BCM)")
         elif mode != GPIO.BCM:
-            raise RuntimeError("GPIO mode is BOARD; expected BCM (pin value is BCM index)")
+            raise RuntimeError(
+                "GPIO mode is BOARD; expected BCM (pin value is BCM index)"
+            )
 
         # 2) Always (re)configure the pin as OUT (cheap and safe)
         GPIO.setup(self._reset_bcm_pin, GPIO.OUT, initial=GPIO.LOW)
@@ -116,29 +121,28 @@ class XMOS():
             )
         log.debug("GPIO %d configured as OUT", self._reset_bcm_pin)
 
-    
     def set_flash_mode(self) -> None:
         self._ensure_gpio_setup()
-        log.info( f"Enabling flashing mode (XMOS in reset state)" )
+        log.info(f"Enabling flashing mode (XMOS in reset state)")
         GPIO.output(self._reset_bcm_pin, GPIO.HIGH)
 
     def unset_flash_mode(self) -> None:
         self._ensure_gpio_setup()
-        log.info( f"Disabling flashing mode (re-init XMOS)" )
+        log.info(f"Disabling flashing mode (re-init XMOS)")
         GPIO.output(self._reset_bcm_pin, GPIO.LOW)
-        
-    
+
     def flash_firmware(self, img: Path, verify: bool = False) -> None:
         from .components.flashrom_wrapper import Flashrom
+
         self.set_flash_mode()
-        time.sleep(.5)
+        time.sleep(0.5)
         flasher = Flashrom.for_rpi_w25q64jv(timeout=600)
         if not flasher.confirm_chip():
             raise SystemExit("Flash chip not found or not accessible")
 
         if not img.exists():
             raise ValueError(f"Image-file not found {img}")
-        
+
         log.info(f"Starting flashing of {img}")
         flasher.write_image(img, verify=verify)
 
@@ -148,38 +152,72 @@ class XMOS():
     def run_spi_echo_test(self):
         for step in range(10):
             rnd_bytes = random.randbytes(128)
-            ok, data = self._cntrl.send_cmd( SPI_ECHO_SERVICER.CMD_SET, rnd_bytes)
+            ok, data = self._cntrl.send_cmd(SPI_ECHO_SERVICER.CMD_SET, rnd_bytes)
             if not ok:
-                print( "sending failed")
+                print("sending failed")
                 continue
             ok, data = self._cntrl.send_cmd(SPI_ECHO_SERVICER.CMD_GET)
             if not ok or data != rnd_bytes:
-                print( f"step {step} failed:\n  sent: {rnd_bytes}\n  recv: {data}")
+                print(f"step {step} failed:\n  sent: {rnd_bytes}\n  recv: {data}")
                 continue
-            
-            print( f"step: {step} passed")    
-    
-    def set_mic_left_output(self, out_select:int) -> None:
-        if 0 <= out_select <= 7 :
-             ok, data = self._cntrl.send_cmd( AUDIO_CFG_SERVICER.CMD_MIC_LEFT_SELECT, [out_select] )
-    
-    def set_mic_right_output(self, out_select:int) -> None:
-        if 0 <= out_select <= 7 :
-             ok, data = self._cntrl.send_cmd( AUDIO_CFG_SERVICER.CMD_MIC_RIGHT_SELECT, [out_select] )
+
+            print(f"step: {step} passed")
+
+    def set_mic_left_output(self, out_select: int) -> None:
+        settings = self.get_mic_output_settings()
+        self.set_mic_output_channels(out_select, settings.i2s_channel_map[1])
+
+    def set_mic_right_output(self, out_select: int) -> None:
+        settings = self.get_mic_output_settings()
+        self.set_mic_output_channels(settings.i2s_channel_map[0], out_select)
+
+    def get_mic_output_settings(self) -> MicOutputSettings:
+        return self._cntrl.get_mic_output_settings()
+
+    def set_mic_output_channels(self, left: int, right: int) -> bool:
+        return self._cntrl.set_mic_output_settings_partial(
+            i2s_channel_map=(left, right)
+        )
+
+    def set_mic_output_packing(
+        self, enabled: bool, mapping: list[int] | tuple[int, ...] | None = None
+    ) -> bool:
+        kwargs: dict = {"pack_extra_upsample_channels": enabled}
+        if mapping is not None:
+            kwargs["upsample_channel_map"] = mapping
+        return self._cntrl.set_mic_output_settings_partial(**kwargs)
+
+    def get_speaker_settings(self) -> SpeakerSettings:
+        return self._cntrl.get_speaker_settings()
+
+    def set_speaker_eq(self, enabled: bool, profile_id: int | None = None) -> bool:
+        return self._cntrl.set_speaker_settings_partial(
+            eq_enabled=enabled,
+            eq_profile_id=profile_id,
+        )
+
+    def get_mic_input_settings(self) -> MicInputSettings:
+        return self._cntrl.get_mic_input_settings()
+
+    def set_mic_input_gains(
+        self, mic_gain: int | None = None, ref_gain: int | None = None
+    ) -> bool:
+        return self._cntrl.set_mic_input_settings_partial(
+            mic_gain=mic_gain,
+            ref_gain=ref_gain,
+        )
 
     def _prerelease_str(idx: int) -> str:
         return {1: "alpha", 2: "beta", 3: "rc", 4: "dev"}.get(idx, "")
-    
+
     def _fw_from_bytes(self, data: bytes):
         if len(data) != 5:
             raise ValueError(f"expected 5 bytes, got {len(data)}")
         maj, mi, pa, pre, pre_n = data
         pre_s = "-" + XMOS._prerelease_str(pre) if pre else ""
         pre_i = f".{pre_n}" if pre and pre_n else ""
-        return f"v{maj}.{mi}.{pa}{pre_s}{pre_i}"       
-
+        return f"v{maj}.{mi}.{pa}{pre_s}{pre_i}"
 
 
 def init() -> None:
     pass
-
