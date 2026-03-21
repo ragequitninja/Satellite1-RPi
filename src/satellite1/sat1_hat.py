@@ -45,6 +45,7 @@ def _func_name(code: int) -> str:
 
 class XMOS:
     CNTRL_STATUS_LENGTH = 4
+    STATUS_READY = 1
 
     def __init__(self) -> None:
         cntrl_cfg = DeviceCntrlConfig(
@@ -69,17 +70,34 @@ class XMOS:
 
     def read_firmware(self) -> str | None:
         ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
+        if not ok or data is None or len(data) != 5:
+            if self.wait_until_ready(timeout_s=1.0, poll_interval_s=0.1):
+                ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
         if ok and data is not None and len(data) == 5:
             self._firmware = self._fw_from_bytes(data)
             return self._firmware
         return None
 
     def read_status(self) -> StatusRegister | None:
-        ok, data = self._cntrl.send_cmd(MAIN_SERVICER.CMD_NO_OP)
-        if ok and data is not None and len(data) == XMOS.CNTRL_STATUS_LENGTH:
+        ok, _ = self._cntrl.send_cmd(MAIN_SERVICER.CMD_NO_OP)
+        if ok:
+            data = bytes(self._cntrl.dc_status_register_[: XMOS.CNTRL_STATUS_LENGTH])
             self._status = StatusRegister.from_bytes(data)
             return self._status
         return None
+
+    def wait_until_ready(
+        self, timeout_s: float = 5.0, poll_interval_s: float = 0.1
+    ) -> bool:
+        deadline = time.monotonic() + timeout_s
+
+        while time.monotonic() < deadline:
+            status = self.read_status()
+            if status is not None and status.device_status == XMOS.STATUS_READY:
+                return True
+            time.sleep(poll_interval_s)
+
+        return False
 
     def reset_xmos(self) -> bool:
         if GPIO is None:
