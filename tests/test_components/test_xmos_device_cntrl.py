@@ -1,5 +1,6 @@
 # Import the module under test as "mod"
 import importlib
+import struct
 import sys
 import types
 
@@ -151,7 +152,6 @@ def test_read_command_second_phase_returns_payload():
 
 
 def test_command_struct_validation():
-
     mod, _ = load_module_with_stubbed_spidev()
     with pytest.raises(ValueError):
         mod.DeviceCntrlCMD(-1, 0, 0)
@@ -214,4 +214,111 @@ def test_get_mic_output_settings_reads_new_resource_command():
     settings = dev.get_mic_output_settings()
     assert settings.i2s_channel_map == (0, 3)
     assert settings.pack_extra_upsample_channels == 0
+    dev.close()
+
+
+def test_encode_mic_output_partial_rejects_invalid_channel_index():
+    mod, _ = load_module_with_stubbed_spidev()
+    with pytest.raises(ValueError, match="channel index"):
+        mod.XMOSDeviceCntrl.encode_mic_output_partial(i2s_channel_map=(0, 6))
+
+
+def test_encode_mic_output_partial_requires_field():
+    mod, _ = load_module_with_stubbed_spidev()
+    with pytest.raises(ValueError, match="at least one"):
+        mod.XMOSDeviceCntrl.encode_mic_output_partial()
+
+
+def test_encode_speaker_settings_partial_contains_expected_mask():
+    mod, _ = load_module_with_stubbed_spidev()
+    payload = mod.XMOSDeviceCntrl.encode_speaker_settings_partial(
+        eq_enabled=True,
+        eq_profile_id=2,
+    )
+    assert payload == (0x03).to_bytes(4, "little") + bytes([1, 2, 0, 0])
+
+
+def test_decode_speaker_settings_round_trip_shape():
+    mod, _ = load_module_with_stubbed_spidev()
+    settings = mod.XMOSDeviceCntrl.decode_speaker_settings(bytes([1, 2]))
+    assert settings.eq_enabled == 1
+    assert settings.eq_profile_id == 2
+
+
+def test_set_speaker_settings_partial_sends_new_resource_command():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue([0x02, 0x00, 0x00, 0])
+    ok = dev.set_speaker_settings_partial(eq_enabled=True, eq_profile_id=1)
+    assert ok is True
+    assert dev._spi.last_tx[0] == mod.AUDIO_PIPELINE_CONTROL.SPEAKER_SETTINGS_RES_ID
+    assert dev._spi.last_tx[1] == mod.AUDIO_PIPELINE_CONTROL.CMD_SET_SETTINGS_PARTIAL
+    dev.close()
+
+
+def test_get_speaker_settings_reads_new_resource_command():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE, 1, 2],
+    )
+    settings = dev.get_speaker_settings()
+    assert settings.eq_enabled == 1
+    assert settings.eq_profile_id == 2
+    dev.close()
+
+
+def test_encode_mic_input_settings_partial_contains_expected_mask():
+    mod, _ = load_module_with_stubbed_spidev()
+    payload = mod.XMOSDeviceCntrl.encode_mic_input_settings_partial(
+        mic_gain=0x40000000,
+        ref_gain=0x20000000,
+    )
+    assert payload[:4] == (0x03).to_bytes(4, "little")
+    assert payload[4:] == (0x40000000).to_bytes(4, "little", signed=True) + (
+        0x20000000
+    ).to_bytes(4, "little", signed=True)
+
+
+def test_encode_mic_input_settings_partial_requires_field():
+    mod, _ = load_module_with_stubbed_spidev()
+    with pytest.raises(ValueError, match="at least one"):
+        mod.XMOSDeviceCntrl.encode_mic_input_settings_partial()
+
+
+def test_decode_mic_input_settings_round_trip_shape():
+    mod, _ = load_module_with_stubbed_spidev()
+    settings = mod.XMOSDeviceCntrl.decode_mic_input_settings(
+        struct.pack("<2i", 0x40000000, 0x20000000)
+    )
+    assert settings.mic_gain == 0x40000000
+    assert settings.ref_gain == 0x20000000
+
+
+def test_set_mic_input_settings_partial_sends_new_resource_command():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue([0x02, 0x00, 0x00, 0])
+    ok = dev.set_mic_input_settings_partial(mic_gain=1, ref_gain=2)
+    assert ok is True
+    assert dev._spi.last_tx[0] == mod.AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID
+    assert dev._spi.last_tx[1] == mod.AUDIO_PIPELINE_CONTROL.CMD_SET_SETTINGS_PARTIAL
+    dev.close()
+
+
+def test_get_mic_input_settings_reads_new_resource_command():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE] + list(struct.pack("<2i", 3, 4)),
+    )
+    settings = dev.get_mic_input_settings()
+    assert settings.mic_gain == 3
+    assert settings.ref_gain == 4
     dev.close()

@@ -97,3 +97,53 @@ def test_verbose_flags_do_not_crash(capsys):
 def test_set_mic_output_uses_new_wrapper(capsys):
     rc, out = run(["set-mic-output", "1", "2"], capsys)
     assert rc == 0
+
+
+def test_set_mic_output_returns_failure_code(capsys, monkeypatch):
+    class FakeXMOS:
+        def setup(self):
+            return True
+
+        def read_firmware(self):
+            return "v1.2.3"
+
+        def read_status(self):
+            return bytes([0x01, 0x02, 0x03])
+
+        def reset_xmos(self):
+            return True
+
+        def flash_firmware(self, img: Path, verify: bool = False):
+            return True
+
+        def set_mic_output_channels(self, left: int, right: int):
+            return False
+
+    monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
+    rc, _ = run(["set-mic-output", "1", "2"], capsys)
+    assert rc == 1
+
+
+def test_read_firmware_handles_missing_payload(capsys, monkeypatch):
+    class FakeXMOS:
+        def setup(self):
+            return True
+
+        def read_firmware(self):
+            return None
+
+        def read_status(self):
+            return bytes([0x01, 0x02, 0x03])
+
+        def reset_xmos(self):
+            return True
+
+        def flash_firmware(self, img: Path, verify: bool = False):
+            return True
+
+        def set_mic_output_channels(self, left: int, right: int):
+            return True
+
+    monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
+    rc, out = run(["read-firmware"], capsys)
+    assert rc == 1 and out == "None"
