@@ -1,8 +1,7 @@
-from dataclasses import dataclass, field, InitVar, replace
-from typing import Callable, ClassVar
-from pathlib import Path
-import time
 import random
+import time
+from pathlib import Path
+from typing import Callable, Literal
 
 try:
     import RPi.GPIO as GPIO  # type: ignore
@@ -11,25 +10,27 @@ except Exception:  # ImportError on macOS, etc.
 
 import logging
 
-from .components.pcm5122 import PCM5122, PCM5122Config, PCM5122GPIOPin
 from .components.xmos_device_cntrl import (
-    DeviceCntrlConfig,
-    XMOSDeviceCntrl,
-    DeviceCntrlStatusRegister as StatusRegister,
-    MicInputSettings,
-    MicOutputSettings,
-    SpeakerSettings,
     DFU_SERVICER,
     MAIN_SERVICER,
     SPI_ECHO_SERVICER,
+    DeviceCntrlConfig,
+    MicInputSettings,
+    MicOutputSettings,
+    SpeakerSettings,
+    XMOSDeviceCntrl,
 )
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from .components.xmos_device_cntrl import (
+    DeviceCntrlStatusRegister as StatusRegister,
+)
 
 log = logging.getLogger(__name__)
 
 
 def _func_name(code: int) -> str:
     # Helpful when debugging
+    if GPIO is None:
+        return str(code)
     names = {
         GPIO.IN: "IN",
         GPIO.OUT: "OUT",
@@ -57,10 +58,13 @@ class XMOS:
 
         self._cntrl = XMOSDeviceCntrl(cntrl_cfg)
         self._reset_bcm_pin = 5  # RPi Header 29
-        self._status = None
+        self._status: StatusRegister | None = None
+        self._connection_state: Literal["DETACHED", "CNTRL_MODE"] | None = None
+        self._state: Literal["DETACHED", "CNTRL_MODE"] | None = None
         self._firmware: str | None = None
 
     def setup(self, init_spi: bool = True) -> None:
+        del init_spi
         self._cntrl.open()
 
     def read_firmware(self) -> str | None:
@@ -78,20 +82,24 @@ class XMOS:
         return None
 
     def reset_xmos(self) -> bool:
+        if GPIO is None:
+            raise RuntimeError("RPi.GPIO not available")
         GPIO.output(self._reset_bcm_pin, GPIO.HIGH)
         time.sleep(0.1)
         GPIO.output(self._reset_bcm_pin, GPIO.LOW)
         time.sleep(0.1)
-        self._status = "DETACHED"
+        self._connection_state = "DETACHED"
+        return True
 
-    def subscribe_status_changes(cb: Callable[[StatusRegister], None]) -> None:
+    def subscribe_status_changes(self, cb: Callable[[StatusRegister], None]) -> None:
+        del self, cb
         pass
 
     def _poll(self) -> None:
-        if self._status == "DETACHED":
+        if self._connection_state == "DETACHED":
             if self.read_firmware():
                 self._state = "CNTRL_MODE"
-        elif self._status == "CNTRL_MODE":
+        elif self._connection_state == "CNTRL_MODE":
             self.read_status()
 
     def set_led_states(self) -> None:
@@ -99,6 +107,8 @@ class XMOS:
 
     def _ensure_gpio_setup(self) -> None:
         """Idempotent, strict, and self-validating setup for a BCM pin."""
+        if GPIO is None:
+            raise RuntimeError("RPi.GPIO not available")
         # 1) Enforce BCM numbering; fail fast if something else chose BOARD
         mode = GPIO.getmode()
         if mode is None:
@@ -123,12 +133,16 @@ class XMOS:
 
     def set_flash_mode(self) -> None:
         self._ensure_gpio_setup()
-        log.info(f"Enabling flashing mode (XMOS in reset state)")
+        log.info("Enabling flashing mode (XMOS in reset state)")
+        if GPIO is None:
+            raise RuntimeError("RPi.GPIO not available")
         GPIO.output(self._reset_bcm_pin, GPIO.HIGH)
 
     def unset_flash_mode(self) -> None:
         self._ensure_gpio_setup()
-        log.info(f"Disabling flashing mode (re-init XMOS)")
+        log.info("Disabling flashing mode (re-init XMOS)")
+        if GPIO is None:
+            raise RuntimeError("RPi.GPIO not available")
         GPIO.output(self._reset_bcm_pin, GPIO.LOW)
 
     def flash_firmware(self, img: Path, verify: bool = False) -> None:
@@ -147,7 +161,7 @@ class XMOS:
         flasher.write_image(img, verify=verify)
 
         self.unset_flash_mode()
-        self._status = "DETACHED"
+        self._connection_state = "DETACHED"
 
     def run_spi_echo_test(self):
         for step in range(10):
@@ -158,7 +172,7 @@ class XMOS:
                 continue
             ok, data = self._cntrl.send_cmd(SPI_ECHO_SERVICER.CMD_GET)
             if not ok or data != rnd_bytes:
-                print(f"step {step} failed:\n  sent: {rnd_bytes}\n  recv: {data}")
+                print(f"step {step} failed:\n  sent: {rnd_bytes!r}\n  recv: {data!r}")
                 continue
 
             print(f"step: {step} passed")
@@ -207,6 +221,7 @@ class XMOS:
             ref_gain=ref_gain,
         )
 
+    @staticmethod
     def _prerelease_str(idx: int) -> str:
         return {1: "alpha", 2: "beta", 3: "rc", 4: "dev"}.get(idx, "")
 

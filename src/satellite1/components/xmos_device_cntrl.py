@@ -1,9 +1,10 @@
-from pydantic import BaseModel, Field
-from typing import Sequence, Self
-from dataclasses import dataclass
 import logging
 import struct
+from dataclasses import dataclass
 from time import sleep
+from typing import Self, Sequence
+
+from pydantic import BaseModel
 
 try:
     import spidev

@@ -14,14 +14,11 @@ class PDContract:
     def __str__(self) -> str:
         return f"{self.voltage}V @ {self.current}A"
 
+
 def get_pd_contract() -> PDContract:
     voltage_uv = sysfs_read_int(PD_SYS_PATH / "voltage_now")  # in µV
-    current_ua = sysfs_read_int(PD_SYS_PATH / "current_now")  # in µA 
-    if voltage_uv :
-        return PDContract(
-            voltage=voltage_uv/1e6,
-            current=current_ua/1e6,
-        )
-
-
-
+    current_ua = sysfs_read_int(PD_SYS_PATH / "current_now")  # in µA
+    return PDContract(
+        voltage=(voltage_uv / 1e6) if voltage_uv is not None else None,
+        current=(current_ua / 1e6) if current_ua is not None else None,
+    )

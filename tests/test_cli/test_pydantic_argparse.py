@@ -1,11 +1,11 @@
 # tests/test_pydantic_argparse.py
 from __future__ import annotations
+
 import argparse
-from pathlib import Path
 from typing import List, Literal
 
 import pytest
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # If your helpers live in satellite1/arg_overrides.py, adjust the import:
 from satellite1.cli.pydantic_argparse import add_pydantic_overrides, collect_overrides
@@ -65,10 +65,15 @@ def test_parses_literal_choices_and_types_and_list():
     p = make_parser()
     ns = p.parse_args(
         [
-            "--dac-level", "0.7",
-            "--dac-mode", "manual",
-            "--dac-count", "5",
-            "--dac-tags", "alpha", "beta",
+            "--dac-level",
+            "0.7",
+            "--dac-mode",
+            "manual",
+            "--dac-count",
+            "5",
+            "--dac-tags",
+            "alpha",
+            "beta",
         ]
     )
     overrides = collect_overrides(ns, CliModel, prefix="dac")

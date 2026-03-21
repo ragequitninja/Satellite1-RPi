@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
+
 from ..sat1_hat import XMOS
 
 log = logging.getLogger(__name__)
@@ -46,17 +47,17 @@ def _handle(args: argparse.Namespace) -> int:
         return 0 if ok else 1
 
     if args.cmd == "flash-firmware":
-        ok = xmos.flash_firmware(args.img, verify=args.verify)
-        log.info("Flashed %s (verify=%s): %s", args.img, args.verify, ok)
-        print(ok)
-        return 0 if ok else 1
+        xmos.flash_firmware(args.img, verify=args.verify)
+        log.info("Flashed %s (verify=%s): True", args.img, args.verify)
+        print(True)
+        return 0
 
     # SPI Commands
     log.info("Init SPI")
-    ok = xmos.setup()
+    xmos.setup()
     if args.cmd == "setup":
-        log.info("XMOS setup: %s", ok)
-        print(ok)
+        log.info("XMOS setup: True")
+        print(True)
         return 0
 
     if args.cmd == "read-firmware":
@@ -76,7 +77,7 @@ def _handle(args: argparse.Namespace) -> int:
         return 0 if xmos.set_mic_output_channels(args.left, args.right) else 1
 
     if args.cmd == "run-spi-test":
-        log.info(f"Starting SPI Test")
+        log.info("Starting SPI Test")
         xmos.run_spi_echo_test()
         return 0
 

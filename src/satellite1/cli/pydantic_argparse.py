@@ -1,11 +1,14 @@
 import argparse
-from pathlib import Path
 from enum import Enum
-from typing import Any, get_origin, get_args, Literal
+from pathlib import Path
+from typing import Any, Literal, get_args, get_origin
+
 from pydantic import BaseModel
+
 
 def _kebab(name: str) -> str:
     return name.replace("_", "-")
+
 
 def _base_type(tp: Any) -> tuple[type[Any] | None, dict[str, Any]]:
     """
@@ -61,7 +64,9 @@ def add_pydantic_overrides(
     Others default to None (only provided values override).
     """
     descriptions = descriptions or {}
-    group_title = title or (f"{prefix.upper()} config overrides" if prefix else "config overrides")
+    group_title = title or (
+        f"{prefix.upper()} config overrides" if prefix else "config overrides"
+    )
     grp = parser.add_argument_group(group_title)
 
     def flag_for(fname: str) -> str:
@@ -85,8 +90,18 @@ def add_pydantic_overrides(
                 )
             except AttributeError:
                 # Fallback for very old Python (not needed on 3.11+)
-                grp.add_argument(flag_for(fname), dest=dest, action="store_true", default=None, help=help_text)
-                noflag = f"--no-{prefix}-{_kebab(fname)}" if prefix else f"--no-{_kebab(fname)}"
+                grp.add_argument(
+                    flag_for(fname),
+                    dest=dest,
+                    action="store_true",
+                    default=None,
+                    help=help_text,
+                )
+                noflag = (
+                    f"--no-{prefix}-{_kebab(fname)}"
+                    if prefix
+                    else f"--no-{_kebab(fname)}"
+                )
                 grp.add_argument(noflag, dest=dest, action="store_false")
         else:
             kwargs: dict[str, Any] = {"dest": dest, "default": None}
@@ -98,7 +113,9 @@ def add_pydantic_overrides(
             grp.add_argument(flag_for(fname), **kwargs)
 
 
-def collect_overrides(ns: argparse.Namespace, model_cls: type[BaseModel], *, prefix: str) -> dict[str, Any]:
+def collect_overrides(
+    ns: argparse.Namespace, model_cls: type[BaseModel], *, prefix: str
+) -> dict[str, Any]:
     """
     Pull only provided overrides (non-None) for the given model.
     Works for both prefixed (e.g. "dac_startup_volume") and unprefixed ("startup_volume").

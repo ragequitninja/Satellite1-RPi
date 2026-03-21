@@ -1,5 +1,6 @@
 from pathlib import Path
 
+
 def sysfs_read_int(path: Path) -> int | None:
     try:
         txt = path.read_text(encoding="ascii").strip()

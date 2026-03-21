@@ -1,11 +1,9 @@
-import types
-import builtins
-import pytest
-
 # Import the module under test as "mod"
 import importlib
 import sys
+import types
 
+import pytest
 
 MODULE_NAME = (
     "satellite1.components.xmos_device_cntrl"  # change if your filename differs
@@ -153,7 +151,6 @@ def test_read_command_second_phase_returns_payload():
 
 
 def test_command_struct_validation():
-    from math import inf
 
     mod, _ = load_module_with_stubbed_spidev()
     with pytest.raises(ValueError):

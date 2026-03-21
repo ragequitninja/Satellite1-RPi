@@ -1,6 +1,5 @@
 # tests/test_dac_cli.py
 
-import types
 from pathlib import Path
 
 import pytest
@@ -107,10 +106,13 @@ def test_set_volume_sets_value_and_prints(dummy_dacs, capsys):
     assert "0.33" in captured.out
 
 
-@pytest.mark.parametrize("cmd, attr", [
-    ("mute", "_muted"),
-    ("unmute", "_muted"),  # unmute will set it False again
-])
+@pytest.mark.parametrize(
+    "cmd, attr",
+    [
+        ("mute", "_muted"),
+        ("unmute", "_muted"),  # unmute will set it False again
+    ],
+)
 def test_mute_unmute_commands(dummy_dacs, capsys, cmd, attr):
     line_dac, _ = dummy_dacs
     if cmd == "mute":
@@ -194,4 +196,3 @@ def test_active_dac_disabled_raises_system_exit(dummy_dacs):
         dac_mod._handle(args)
 
     assert "not found or disabled" in str(excinfo.value)
-

@@ -1,19 +1,22 @@
 # satellite1/config_load.py
 from __future__ import annotations
-from pathlib import Path
-from typing import Any, Mapping, TypeVar, Iterable
+
 import tomllib
+from pathlib import Path
+from typing import Any, Iterable, Mapping, TypeVar
+
 from pydantic import BaseModel
 
 DEFAULT_CONF = Path("/etc/satellite1.conf")
 
 DEFAULT_PATHS = [
-    Path.home()/".config"/"satellite1"/"config.toml",
+    Path.home() / ".config" / "satellite1" / "config.toml",
     Path("/etc/satellite1.conf"),
 ]
 
 
 T = TypeVar("T", bound=BaseModel)
+
 
 def _first_existing(paths: Iterable[Path]) -> Path | None:
     for p in paths:
@@ -32,6 +35,7 @@ def _read_toml(path: Path | None) -> Mapping[str, Any]:
     with path.open("rb") as f:
         return tomllib.load(f)
 
+
 def _pick_section(raw: Mapping[str, Any], groups: tuple[str, ...]) -> Mapping[str, Any]:
     # Try declared groups in order; fall back to whole file (top-level keys) if none match.
     for g in groups:
@@ -39,6 +43,7 @@ def _pick_section(raw: Mapping[str, Any], groups: tuple[str, ...]) -> Mapping[st
         if isinstance(sec, dict):
             return sec
     return raw
+
 
 def load_from_toml(
     model_cls: type[T],

@@ -5,13 +5,14 @@ from ..hal.i2c_interface import I2cInterface
 LTR303_ADDR = 0x29
 
 # Registers (subset)
-REG_CONTR   = 0x80  # control (power/gain)
-REG_MEAS    = 0x85  # measure rate (integration + repeat)
-REG_CH1_L   = 0x88
-REG_CH1_H   = 0x89
-REG_CH0_L   = 0x8A
-REG_CH0_H   = 0x8B
-REG_PARTID  = 0x86
+REG_CONTR = 0x80  # control (power/gain)
+REG_MEAS = 0x85  # measure rate (integration + repeat)
+REG_CH1_L = 0x88
+REG_CH1_H = 0x89
+REG_CH0_L = 0x8A
+REG_CH0_H = 0x8B
+REG_PARTID = 0x86
+
 
 class LTR303:
     def __init__(self, bus=1, addr=LTR303_ADDR):
@@ -27,9 +28,9 @@ class LTR303:
 
     def read16(self, lo, hi):
         with self._i2c as bus:
-            l = bus.read_byte(lo)
-            h = bus.read_byte(hi)
-        return (h << 8) | l
+            lo_byte = bus.read_byte(lo)
+            hi_byte = bus.read_byte(hi)
+        return (hi_byte << 8) | lo_byte
 
     def begin(self, gain=0b001, integ=0x02, rate=0x03):
         # Power on + gain=1x (gain bits 2:0), bit7 = 1 (active)
@@ -46,6 +47,7 @@ class LTR303:
         ch1 = self.read16(REG_CH1_L, REG_CH1_H)
         ch0 = self.read16(REG_CH0_L, REG_CH0_H)
         return ch0, ch1
+
 
 if __name__ == "__main__":
     s = LTR303()
