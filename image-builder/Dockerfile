@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /pi-gen
 
 # Clone pi-gen
-RUN git clone --depth=1 --branch bookworm-arm64 https://github.com/RPi-Distro/pi-gen.git . 
+RUN git clone --depth=1 --branch bookworm-arm64 https://github.com/RPi-Distro/pi-gen.git .
 
 # Default command: build image
 CMD ["bash", "-lc", "./build.sh"]

@@ -14,13 +14,11 @@ Homepage: https://github.com/futureproofhomes/Satellite1-RPi
 
 Package: satellite1-rpi-sdk
 Architecture: any
-Depends: 
+Depends:
   ${misc:Depends},
-  python3-venv, 
-  python3-pip, 
+  python3-venv,
+  python3-pip,
   flashrom
 Description: Satellite1 I2S overlay, ALSA config, and boot-time I²C init
  Installs Satellite1 device-tree overlay, ALSA PCM config, and a systemd
  oneshot service that initializes the IO expander and DAC at boot.
-
-

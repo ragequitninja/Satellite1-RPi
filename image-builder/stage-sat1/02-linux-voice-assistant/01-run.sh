@@ -1,8 +1,8 @@
 #!/bin/bash -e
 
 REPO_URL="https://github.com/FutureProofHomes/linux-voice-assistant.git"
-REPO_DIR="/opt/linux-voice-assistant"  
-SETUP_SCRIPT="script/setup"  
+REPO_DIR="/opt/linux-voice-assistant"
+SETUP_SCRIPT="script/setup"
 
 on_chroot << EOF
 set -e

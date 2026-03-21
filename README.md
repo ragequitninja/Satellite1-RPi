@@ -1,5 +1,5 @@
-# 🚧 Experimental repository 
-> **Early-stage development only.**  
+# 🚧 Experimental repository
+> **Early-stage development only.**
 > **No support is provided yet. Use at your own risk.**
 ---
 ## Satellite1-RPi
@@ -8,12 +8,12 @@
 
 This repository contains all components required to run the Satellite1-HAT on a Raspberry Pi Zero W2:
 
-- **`satellite1-rpi`** — Python SDK library  
-- **`satellite1-rpi-setup`** — Raspberry Pi configuration packaged as a `.deb`  
-- **`rpi-kernel-fusb302`** — Custom Raspberry Pi kernel with USB-C Power Delivery support  
+- **`satellite1-rpi`** — Python SDK library
+- **`satellite1-rpi-setup`** — Raspberry Pi configuration packaged as a `.deb`
+- **`rpi-kernel-fusb302`** — Custom Raspberry Pi kernel with USB-C Power Delivery support
 - **`image-builder`** — Generates SD-card images with everything preinstalled
 
-> **Target Platform:** Raspberry Pi Zero W2  
+> **Target Platform:** Raspberry Pi Zero W2
 > **OS:** Raspberry Pi OS (Bookworm)
 
 ---
@@ -29,7 +29,7 @@ This repository contains all components required to run the Satellite1-HAT on a 
 ## Quick start
 
 ### Flash the Satellite1 SDK Image
-The easiest way to set up the Satellite1-HAT is to flash the prepared **Satellite1 SDK Image**.  
+The easiest way to set up the Satellite1-HAT is to flash the prepared **Satellite1 SDK Image**.
 This image includes:
 
 - Raspberry Pi OS (Bookworm)
@@ -40,11 +40,11 @@ This image includes:
 
 **Steps:**
 
-1. Install **Raspberry Pi Imager**  
-2. In *Application Settings*, set:  
+1. Install **Raspberry Pi Imager**
+2. In *Application Settings*, set:
    **Content Repository → `<your repository URL>`**
 3. Select the **Satellite1 SDK Image**
-4. Flash it to an SD card  
+4. Flash it to an SD card
 5. Boot the Raspberry Pi Zero W2 with the Satellite1-HAT installed
 
 ---
@@ -89,7 +89,7 @@ Installs and configures:
 - `/etc/alsa/conf.d/50-satellite1.conf`
 - Loads `i2c-dev` on startup
 - Enables SPI, I²S, and I2C in `/boot/firmware/config.txt`
-- Adds sensor overlay:  
+- Adds sensor overlay:
   `i2c-sensor,addr=0x38,chip=aht20`
 
 ---
@@ -113,8 +113,8 @@ This will:
 
 The `sat1` CLI provides control over:
 
-- DAC  
-- XMOS  
+- DAC
+- XMOS
 - USB-C PD
 
 ---
@@ -231,4 +231,3 @@ Shows current USB-C Power Delivery contract.
 
 
 More documentation coming soon.
-

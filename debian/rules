@@ -4,7 +4,7 @@ export DH_VERBOSE=1
 # Wheelhouse build dirs (throwaway)
 BUILD_VENV   := $(CURDIR)/debian/.build-venv
 WHEELHOUSE   := $(CURDIR)/debian/.wheelhouse
-PRJ_ROOT     := /project 
+PRJ_ROOT     := /project
 
 # If you add 'dh-sequence-python3' to Build-Depends, you can drop '--with python3'.
 %:

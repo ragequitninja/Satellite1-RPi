@@ -16,4 +16,3 @@ NO_SPARSE_FILE=1
 
 #enable config option im rpi-imager
 ENABLE_CLOUDINIT=1
-

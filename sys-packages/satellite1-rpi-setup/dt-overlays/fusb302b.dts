@@ -26,7 +26,7 @@
 		    /* Sink capabilities: fallback 5 V @ 3 A prefer 9 V @ 2 A, */
 		    sink-pdos = <0x0001912C 0x0002D0C8>;
 		    op-sink-microwatt = <2000000>;  /* 2 W operating power (5 V * 0.4 A) */
-		    
+
                     connector {
 		      compatible = "usb-c-connector";
 		      label = "USB-C";
@@ -44,4 +44,3 @@
 	};
 
 };
-

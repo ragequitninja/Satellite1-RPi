@@ -83,4 +83,3 @@ clean:
 help:
 	@echo "Targets: all (build), install, uninstall, enable, clean"
 	@echo "Vars: OVERLAYS, SRC_DIR, BUILD_DIR, DTC, DTCFLAGS, SUDO"
-

@@ -5,4 +5,3 @@ docker run --rm -d --name nginx\
     nginx:alpine
 "/Applications/Raspberry Pi Imager.app/Contents/MacOS/rpi-imager" --repo "$(pwd)/sat1-os-list.json"
 docker stop nginx
-    

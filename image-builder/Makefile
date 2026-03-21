@@ -19,7 +19,7 @@ pi-image: docker-image
 	  bash -lc 'touch stage2/SKIP_IMAGES && ./build.sh'
 	docker cp rpi-img-build:/pi-gen/deploy ./
 	docker rm rpi-img-build
-	
+
 
 
 .PHONY: shell

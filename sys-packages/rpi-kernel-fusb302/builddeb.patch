@@ -3,7 +3,7 @@
 @@ -27,9 +27,22 @@ install_linux_image () {
  	pname=$1
  	pdir=debian/$1
- 
+
  	# Only some architectures with OF support have this target
  	if is_enabled CONFIG_OF_EARLY_FLATTREE && [ -d "${srctree}/arch/${SRCARCH}/boot/dts" ]; then
 -		${MAKE} -f ${srctree}/Makefile INSTALL_DTBS_PATH="${pdir}/usr/lib/linux-image-${KERNELRELEASE}" dtbs_install
@@ -22,5 +22,5 @@
 +			fi
 +		fi
  	fi
- 
+
  	${MAKE} -f ${srctree}/Makefile INSTALL_MOD_PATH="${pdir}" INSTALL_MOD_STRIP=1 modules_install

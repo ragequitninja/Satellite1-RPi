@@ -67,7 +67,7 @@ print-config:
 # ---- Top-level Docker-aware targets --------------------------------------
 
 # Build via Docker: ensures image exists, then runs deb-local inside container
-deb: image $(DEB_FILE) 
+deb: image $(DEB_FILE)
 
 # Build the shared deb-builder image (delegated to prj/Docker/Makefile)
 image:
@@ -111,10 +111,10 @@ $(DEBIAN_DIR)/postinst: $(SRC_POSTINST) | $(DEBIAN_DIR)
 $(TARGET_KERNEL_FILE):
 	mkdir -p "$(dir $(TARGET_KERNEL_FILE))"
 	echo "$(KERNEL_RELEASE)" > "$(TARGET_KERNEL_FILE)"
-	
+
 # Copy postinst into the build tree and make it executable
 $(DEBIAN_DIR)/$(PACKAGE_NAME).install: $(SRC_INSTALL_FILE) $(TARGET_KERNEL_FILE) | $(DEBIAN_DIR)
-	cp "$<" "$@"	
+	cp "$<" "$@"
 	echo "\ntarget-kernel ${TARGET_KERNEL_DST}" >> "$@"
 	echo "debian/.dtbo-build/*.dtbo  /usr/share/$(PACKAGE_NAME)/overlays" >> "$@"
 
