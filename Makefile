@@ -14,10 +14,11 @@ BUILD_DIR     ?= ${PWD}/build/sdk
 DEBIAN_DIR    := ${BUILD_DIR}/debian
 
 LOCAL_VENV    ?= ${PWD}/.venv
+PYTHON        ?= python3.11
 
 # --- Metadata ---
-PYPROJ_VERSION := $(shell python -m setuptools_scm)
-PYPROJ_RELEASE := $(shell python -m setuptools_scm --strip-dev)
+PYPROJ_VERSION := $(shell $(PYTHON) -m setuptools_scm)
+PYPROJ_RELEASE := $(shell $(PYTHON) -m setuptools_scm --strip-dev)
 
 GIT_NAME := $(shell git config user.name)
 GIT_EMAIL := $(shell git config user.email)
@@ -56,7 +57,7 @@ build: verify-git-is-clean | $(OUT_DIR)
 		-v "${PWD}":/work \
 		-v "${OUT_DIR}":/out \
 		$(DOCKER_IMAGE) \
-		/usr/bin/python3 -m build --outdir /out
+		/usr/bin/python3.11 -m build --outdir /out
 
 $(OUT_DIR):
 	@echo "Creating $(OUT_DIR)"
@@ -88,7 +89,7 @@ $(DEBIAN_DIR):
 
 
 $(LOCAL_VENV):
-	python3 -m venv $(LOCAL_VENV)
+	$(PYTHON) -m venv $(LOCAL_VENV)
 	$(LOCAL_VENV)/bin/pip install --upgrade pip
 	$(LOCAL_VENV)/bin/pip install -e .
 

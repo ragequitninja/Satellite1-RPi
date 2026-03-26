@@ -4,13 +4,14 @@ set -e
 # ----- Python venv & local wheel install (if shipped) -----
 VENVDIR=/opt/satellite1/venv
 WHEELDIR=/usr/share/satellite1/wheels
+PYTHON=/usr/bin/python3.11
 
 case "$1" in
   configure|triggered)
     # 1) Create venv if missing
-    if [ ! -x "$VENVDIR/bin/python3" ]; then
+    if [ ! -x "$VENVDIR/bin/python3.11" ]; then
       mkdir -p "$(dirname "$VENVDIR")"
-      /usr/bin/python3 -m venv "$VENVDIR"
+      "$PYTHON" -m venv "$VENVDIR"
     fi
 
     # 2) Bootstrap pip from stdlib

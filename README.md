@@ -229,5 +229,22 @@ Shows current USB-C Power Delivery contract.
 
 ## Development
 
+### Prerequisites
 
-More documentation coming soon.
+- Python 3.11+
+- `pip` and `venv`
+
+### Local setup
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .[dev]
+```
+
+### Run tests
+
+```bash
+PYTHONPATH=src python -m pytest
+```

@@ -7,7 +7,8 @@ Rules-Requires-Root: no
 Build-Depends:
   debhelper-compat (= 13),
   dh-python,
-  python3-all,
+  python3.11,
+  python3.11-venv,
   python3-setuptools,
   python3-wheel
 Homepage: https://github.com/futureproofhomes/Satellite1-RPi
@@ -16,7 +17,8 @@ Package: satellite1-rpi-sdk
 Architecture: any
 Depends:
   ${misc:Depends},
-  python3-venv,
+  python3.11,
+  python3.11-venv,
   python3-pip,
   flashrom
 Description: Satellite1 I2S overlay, ALSA config, and boot-time I²C init

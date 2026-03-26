@@ -71,15 +71,18 @@ class XMOS:
     def read_firmware(self) -> str | None:
         ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
         if not ok or data is None or len(data) != 5:
-            if self.wait_until_ready(timeout_s=1.0, poll_interval_s=0.1):
-                ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
+            self.wait_until_ready(timeout_s=1.0, poll_interval_s=0.1)
+            ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
         if ok and data is not None and len(data) == 5:
             self._firmware = self._fw_from_bytes(data)
             return self._firmware
         return None
 
     def read_status(self) -> StatusRegister | None:
-        ok, _ = self._cntrl.send_cmd(MAIN_SERVICER.CMD_NO_OP)
+        ok, data = self._cntrl.send_cmd(MAIN_SERVICER.CMD_NO_OP)
+        if ok and data is not None and len(data) == XMOS.CNTRL_STATUS_LENGTH:
+            self._status = StatusRegister.from_bytes(data)
+            return self._status
         if ok:
             data = bytes(self._cntrl.dc_status_register_[: XMOS.CNTRL_STATUS_LENGTH])
             self._status = StatusRegister.from_bytes(data)

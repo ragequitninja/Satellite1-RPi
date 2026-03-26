@@ -1,5 +1,6 @@
 #!/usr/bin/make -f
 export DH_VERBOSE=1
+export PYTHON=/usr/bin/python3.11
 
 # Wheelhouse build dirs (throwaway)
 BUILD_VENV   := $(CURDIR)/debian/.build-venv
@@ -15,7 +16,7 @@ PRJ_ROOT     := /project
 override_dh_auto_build-arch:
 	# Fresh build venv
 	rm -rf $(BUILD_VENV)
-	python3 -m venv $(BUILD_VENV)
+	$(PYTHON) -m venv $(BUILD_VENV)
 	$(BUILD_VENV)/bin/pip install --upgrade pip wheel
 
 	# Build a COMPLETE wheelhouse: your pkg + ALL deps (platform-specific wheels)
