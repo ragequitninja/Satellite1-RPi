@@ -8,10 +8,11 @@ from ..audio_out import (
     LineOutDacConfig,
     SpeakerDacConfig,
     get_active_dac_id,
-    get_lineout_dac,
-    get_speaker_dac,
+    get_lineout_dac_for_board,
+    get_speaker_dac_for_board,
     setup_dacs,
 )
+from ..board import resolve_board
 from ..config_load import load_from_toml
 from .pydantic_argparse import add_pydantic_overrides, collect_overrides
 
@@ -47,21 +48,25 @@ def _handle(args: argparse.Namespace) -> int:
     )
     log.debug("Effective SpkDac config: %s", cfg_spk.model_dump())
 
-    line_out_dac = get_lineout_dac(cfg_line)
-    speaker_dac = get_speaker_dac(cfg_spk)
+    board = resolve_board(getattr(args, "board", None), args.config)
+    line_out_dac = get_lineout_dac_for_board(cfg_line, board)
+    speaker_dac = get_speaker_dac_for_board(cfg_spk, board)
 
     dac_key: str | None = args.dac
     if dac_key == "auto":
-        dac_key = get_active_dac_id(line_out_dac, speaker_dac)
+        dac_key = get_active_dac_id(line_out_dac, speaker_dac, board)
 
     if args.cmd == "setup":
-        ok = setup_dacs(line_out_dac, speaker_dac)
+        ok = setup_dacs(line_out_dac, speaker_dac, board)
         log.info("DAC setup: %s", ok)
         print(ok)
         return 0
 
     if dac_key is None:
         raise SystemExit("Both DACs are disabled. Line-out plugged in?")
+
+    if board == "sq66" and dac_key == "speaker":
+        raise SystemExit("speaker DAC not available on sq66")
 
     active_dac: DAC
     if dac_key == "line-out":
@@ -101,6 +106,8 @@ def _handle(args: argparse.Namespace) -> int:
         return 0
 
     if args.cmd == "plugged-in":
+        if board == "sq66":
+            raise SystemExit("line-out jack detect not available on sq66")
         plugged = line_out_dac.plugged_in
         log.info("Jack plugged in: %s", plugged)
         print(plugged)
@@ -169,8 +176,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--config",
         type=Path,
-        ddefault=Path("/etc/satellite1.conf"),
+        default=Path("/etc/satellite1.conf"),
         help="TOML config (default: /etc/satellite1.conf)",
+    )
+    p.add_argument(
+        "--board",
+        choices=["satellite1", "sq66"],
+        default=None,
+        help="Hardware board profile (default: satellite1)",
     )
     p.add_argument(
         "-v",

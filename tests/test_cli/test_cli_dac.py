@@ -36,8 +36,15 @@ class DummyDAC:
     def is_plugged_in(self) -> bool:
         return self._plugged_in
 
+    @property
+    def plugged_in(self) -> bool:
+        return self._plugged_in
+
     def __repr__(self) -> str:
         return f"<DummyDAC {self.name} enabled={self.enabled}>"
+
+    def report_status(self) -> str:
+        return f"{self.name}:ok"
 
 
 @pytest.fixture
@@ -57,12 +64,20 @@ def dummy_dacs(monkeypatch):
 
     monkeypatch.setattr(dac_mod, "load_from_toml", fake_load_from_toml)
 
-    # get_lineout_dac / get_power_dac should ignore cfg and return our dummy objects
-    monkeypatch.setattr(dac_mod, "get_lineout_dac", lambda cfg: line_dac)
-    monkeypatch.setattr(dac_mod, "get_power_dac", lambda cfg: spk_dac)
+    # get_lineout_dac_for_board / get_speaker_dac_for_board should ignore cfg
+    monkeypatch.setattr(
+        dac_mod, "get_lineout_dac_for_board", lambda cfg, board: line_dac
+    )
+    monkeypatch.setattr(
+        dac_mod, "get_speaker_dac_for_board", lambda cfg, board: spk_dac
+    )
 
     # For 'auto' we pick 'line-out' as active
-    monkeypatch.setattr(dac_mod, "get_active_dac_id", lambda lo, spk: "line-out")
+    monkeypatch.setattr(dac_mod, "get_active_dac_id", lambda lo, spk, board: "line-out")
+
+    monkeypatch.setattr(
+        dac_mod, "resolve_board", lambda cli_board, config_path: "satellite1"
+    )
 
     return line_dac, spk_dac
 
@@ -71,6 +86,7 @@ def build_parser():
     """Helper to get a parser with DAC commands attached."""
     p = dac_mod.argparse.ArgumentParser(prog="sat1-dac")
     p.add_argument("--config", type=Path, default=None)
+    p.add_argument("--board", choices=["satellite1", "sq66"], default=None)
     p.add_argument("-v", "--verbose", action="count", default=0)
     dac_mod.attach_dac_parser(p)
     return p
@@ -172,7 +188,7 @@ def test_both_dacs_disabled_raises_system_exit(monkeypatch, dummy_dacs):
     spk_dac.enabled = False
 
     # For 'auto' path, make get_active_dac_id return None to trigger the error path
-    monkeypatch.setattr(dac_mod, "get_active_dac_id", lambda lo, spk: None)
+    monkeypatch.setattr(dac_mod, "get_active_dac_id", lambda lo, spk, board: None)
 
     parser = build_parser()
     args = parser.parse_args(["volume"])
@@ -196,3 +212,37 @@ def test_active_dac_disabled_raises_system_exit(dummy_dacs):
         dac_mod._handle(args)
 
     assert "not found or disabled" in str(excinfo.value)
+
+
+def test_sq66_speaker_selector_raises_clear_error(monkeypatch, dummy_dacs):
+    monkeypatch.setattr(dac_mod, "resolve_board", lambda cli_board, config_path: "sq66")
+
+    parser = build_parser()
+    args = parser.parse_args(["--dac", "speaker", "volume"])
+    dac_mod._configure_logging(args.verbose)
+
+    with pytest.raises(SystemExit) as excinfo:
+        dac_mod._handle(args)
+
+    assert "speaker DAC not available on sq66" in str(excinfo.value)
+
+
+def test_sq66_auto_selects_lineout(monkeypatch, dummy_dacs, capsys):
+    line_dac, _ = dummy_dacs
+    line_dac.volume = 0.66
+    monkeypatch.setattr(dac_mod, "resolve_board", lambda cli_board, config_path: "sq66")
+    monkeypatch.setattr(
+        dac_mod,
+        "get_active_dac_id",
+        lambda lo, spk, board: "line-out" if board == "sq66" else None,
+    )
+
+    parser = build_parser()
+    args = parser.parse_args(["--dac", "auto", "volume"])
+    dac_mod._configure_logging(args.verbose)
+
+    rc = dac_mod._handle(args)
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert "0.66" in captured.out

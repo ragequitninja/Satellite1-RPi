@@ -122,7 +122,7 @@ The `sat1` CLI provides control over:
 ### Global Usage
 
 ```bash
-sat1 [-h] [--config CONFIG] [-v] {dac,xmos,pd} ...
+sat1 [-h] [--config CONFIG] [--board {satellite1,sq66}] [-v] {dac,xmos,pd} ...
 ```
 
 #### Components
@@ -139,7 +139,22 @@ sat1 [-h] [--config CONFIG] [-v] {dac,xmos,pd} ...
 |--------|-------------|
 | `-h`, `--help` | Show help |
 | `--config FILE` | Custom TOML config (default `/etc/satellite1.conf`) |
+| `--board {satellite1,sq66}` | Select hardware profile |
 | `-v`, `--verbose` | Increase verbosity |
+
+### SQ66 Debug Board
+
+The SQ66 board is supported as a debug/testing target.
+
+- Select it with `--board sq66` (or env `SAT1_BOARD=sq66`)
+- It is line-out only; speaker DAC commands are not available
+
+Examples:
+
+```bash
+sat1 --board sq66 dac setup
+sat1 --board sq66 dac volume
+```
 
 ---
 

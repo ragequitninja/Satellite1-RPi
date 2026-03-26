@@ -3,6 +3,9 @@ from typing import ClassVar, Literal, Self, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .board import BoardId
+from .components.dac3101 import DAC3101, DAC3101Config
+from .components.pcal6408a import PCAL6408A, PCAL6408AConfig
 from .components.pcm5122 import PCM5122, PCM5122Config, PCM5122GPIOPin
 from .components.power_delivery import PDContract, get_pd_contract
 from .components.tas2780 import TAS2780, AudioCh, TAS2780Config
@@ -15,6 +18,8 @@ DacStr: TypeAlias = Literal["line-out", "speaker"]
 PCM5122_JACK_SENSOR_PIN = 4
 PCM5122_I2C_ADDR = 0x4D
 TAS2780_I2C_ADDR = 0x3F
+DAC3101_I2C_ADDR = 0x18
+PCAL6408A_I2C_ADDR = 0x20
 
 
 class DACConfig(BaseModel):
@@ -70,6 +75,61 @@ def get_lineout_dac(config: DACConfig) -> LineOutDac:
     return LineOutDac.from_cfg(config)
 
 
+class SQ66LineOutDac(DAC3101):
+    @classmethod
+    def from_cfg(cls, config: DACConfig) -> Self:
+        dac_config = DAC3101Config(
+            enabled=config.enabled,
+            i2c_bus=1,
+            i2c_addr=DAC3101_I2C_ADDR,
+            volume=config.startup_volume,
+            muted=config.startup_muted,
+        )
+        return cls(dac_config)
+
+    @property
+    def plugged_in(self) -> bool:
+        return True
+
+    def report_status(self) -> str:
+        return "SQ66 DAC3101 line-out active"
+
+
+class NoSpeakerDac:
+    def __init__(self) -> None:
+        self._volume = 0.0
+        self._muted = True
+
+    @property
+    def enabled(self) -> bool:
+        return False
+
+    @property
+    def volume(self) -> float:
+        return self._volume
+
+    def setup(self) -> None:
+        return None
+
+    def set_volume(self, volume: float) -> bool:
+        self._volume = float(volume)
+        return False
+
+    def set_mute_on(self) -> bool:
+        self._muted = True
+        return False
+
+    def set_mute_off(self) -> bool:
+        self._muted = False
+        return False
+
+    def is_muted(self) -> bool:
+        return self._muted
+
+    def report_status(self) -> str:
+        return "Speaker DAC not available on this board"
+
+
 class SpeakerDacConfig(DACConfig):
     CONF_GROUPS: ClassVar[tuple[str, ...]] = ("speaker", "tas2780")
     channel: AudioCh = "dwn_mix"
@@ -107,14 +167,48 @@ def get_speaker_dac(config: SpeakerDacConfig) -> SpeakerDac:
     return SpeakerDac.from_cfg(config, dac_power_mode)
 
 
-def get_active_dac_id(pcm5122: LineOutDac, tas2780: SpeakerDac) -> DacStr | None:
-    if pcm5122.enabled and pcm5122.plugged_in:
+def get_active_dac_id(
+    lineout_dac: LineOutDac | SQ66LineOutDac,
+    speaker_dac: SpeakerDac | NoSpeakerDac,
+    board: BoardId = "satellite1",
+) -> DacStr | None:
+    if board == "sq66":
+        return "line-out" if lineout_dac.enabled else None
+    if lineout_dac.enabled and bool(getattr(lineout_dac, "plugged_in", False)):
         return "line-out"
-    if tas2780.enabled:
+    if speaker_dac.enabled:
         return "speaker"
     return None
 
 
-def setup_dacs(pcm5122: LineOutDac, tas2780: SpeakerDac):
-    pcm5122.setup()
-    tas2780.setup()
+def get_sq66_lineout_dac(config: DACConfig) -> SQ66LineOutDac:
+    return SQ66LineOutDac.from_cfg(config)
+
+
+def get_lineout_dac_for_board(
+    config: DACConfig, board: BoardId = "satellite1"
+) -> LineOutDac | SQ66LineOutDac:
+    if board == "sq66":
+        return get_sq66_lineout_dac(config)
+    return get_lineout_dac(config)
+
+
+def get_speaker_dac_for_board(
+    config: SpeakerDacConfig, board: BoardId = "satellite1"
+) -> SpeakerDac | NoSpeakerDac:
+    if board == "sq66":
+        return NoSpeakerDac()
+    return get_speaker_dac(config)
+
+
+def setup_dacs(
+    lineout_dac: LineOutDac | SQ66LineOutDac,
+    speaker_dac: SpeakerDac | NoSpeakerDac,
+    board: BoardId = "satellite1",
+) -> bool:
+    if board == "sq66":
+        ioexp = PCAL6408A(PCAL6408AConfig(i2c_bus=1, i2c_addr=PCAL6408A_I2C_ADDR))
+        ioexp.setup()
+    lineout_dac.setup()
+    speaker_dac.setup()
+    return True

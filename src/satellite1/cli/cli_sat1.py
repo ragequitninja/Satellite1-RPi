@@ -51,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="TOML config (default: /etc/satellite1.conf)",
     )
     p.add_argument(
+        "--board",
+        choices=["satellite1", "sq66"],
+        default=None,
+        help="Hardware board profile (default: satellite1)",
+    )
+    p.add_argument(
         "-v",
         "--verbose",
         action="count",
