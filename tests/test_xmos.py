@@ -1,6 +1,9 @@
 # tests/test_xmos_firmware_parse.py
 from types import SimpleNamespace
 
+import pytest
+
+import satellite1.sat1_hat as sat1_hat_mod
 from satellite1.sat1_hat import XMOS
 
 
@@ -126,3 +129,68 @@ def test_set_mic_input_channel_maps_forwards_to_control_layer():
         "ref_input_channel_map": (0, 1),
         "mic_input_channel_map": (2, 3),
     }
+
+
+def test_poll_transitions_to_control_mode_when_firmware_is_read(monkeypatch):
+    x = XMOS()
+    x._connection_state = "DETACHED"
+    monkeypatch.setattr(x, "read_firmware", lambda: "v1.2.3")
+
+    x._poll()
+
+    assert x._connection_state == "CNTRL_MODE"
+
+
+def test_reset_xmos_calls_gpio_setup_before_toggling(monkeypatch):
+    x = XMOS()
+    calls: list[str] = []
+
+    class FakeGPIO:
+        HIGH = 1
+        LOW = 0
+
+        @staticmethod
+        def output(_pin: int, _value: int) -> None:
+            calls.append("output")
+
+    monkeypatch.setattr(sat1_hat_mod, "GPIO", FakeGPIO)
+    monkeypatch.setattr(
+        x,
+        "_ensure_gpio_setup",
+        lambda: calls.append("ensure"),
+    )
+
+    assert x.reset_xmos() is True
+    assert calls[0] == "ensure"
+    assert calls.count("output") == 2
+
+
+def test_flash_firmware_unsets_flash_mode_on_write_error(monkeypatch, tmp_path):
+    from satellite1.components import flashrom_wrapper
+
+    x = XMOS()
+    img = tmp_path / "factory.bin"
+    img.write_bytes(b"\x01")
+
+    calls: list[str] = []
+    monkeypatch.setattr(x, "set_flash_mode", lambda: calls.append("set"))
+    monkeypatch.setattr(x, "unset_flash_mode", lambda: calls.append("unset"))
+
+    class FakeFlasher:
+        def confirm_chip(self) -> bool:
+            return True
+
+        def write_image(self, _img, verify: bool = False) -> None:
+            del verify
+            raise RuntimeError("write failed")
+
+    monkeypatch.setattr(
+        flashrom_wrapper.Flashrom,
+        "for_rpi_w25q64jv",
+        staticmethod(lambda **_kwargs: FakeFlasher()),
+    )
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        x.flash_firmware(img)
+
+    assert calls == ["set", "unset"]

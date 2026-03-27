@@ -278,18 +278,21 @@ class TAS2780:
             dc_blk0 |= POWER_MODES[mode][1] << REG.DC_BLK0_VBAT1S_MODE_SHIFT
             bus.write_byte(REG.DC_BLK0, dc_blk0)
 
-    def _write_channel(self):
-        ch_val = {
-            "mono": REG.TDM_CFG2_RX_SCFG__STEREO_DWN_MIX,
+    def _write_channel(self) -> None:
+        ch_val: dict[AudioCh, int] = {
             "left": REG.TDM_CFG2_RX_SCFG__MONO_LEFT,
-            "dwn_mix": REG.TDM_CFG2_RX_SCFG__MONO_RIGHT,
+            "right": REG.TDM_CFG2_RX_SCFG__MONO_RIGHT,
+            "dwn_mix": REG.TDM_CFG2_RX_SCFG__STEREO_DWN_MIX,
         }
-        reg_val = ch_val[self._channel]
+        try:
+            reg_val = ch_val[self._channel]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported TAS2780 channel: {self._channel!r}") from exc
         reg_val |= REG.TDM_CFG2_RX_WLEN__32BIT | REG.TDM_CFG2_RX_SLEN__32BIT
         with self._i2c as bus:
             bus.write_byte(REG.TDM_CFG2, reg_val)
 
-    def _write_amp_level(self):
+    def _write_amp_level(self) -> None:
         target = max(0, min(0x14, self._amp_level))
         with self._i2c as bus:
             val = bus.read_byte(REG.CHNL_0)

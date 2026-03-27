@@ -61,7 +61,6 @@ class XMOS:
         self._reset_bcm_pin = 5  # RPi Header 29
         self._status: StatusRegister | None = None
         self._connection_state: Literal["DETACHED", "CNTRL_MODE"] | None = None
-        self._state: Literal["DETACHED", "CNTRL_MODE"] | None = None
         self._firmware: str | None = None
 
     def setup(self, init_spi: bool = True) -> None:
@@ -103,6 +102,7 @@ class XMOS:
         return False
 
     def reset_xmos(self) -> bool:
+        self._ensure_gpio_setup()
         if GPIO is None:
             raise RuntimeError("RPi.GPIO not available")
         GPIO.output(self._reset_bcm_pin, GPIO.HIGH)
@@ -119,7 +119,7 @@ class XMOS:
     def _poll(self) -> None:
         if self._connection_state == "DETACHED":
             if self.read_firmware():
-                self._state = "CNTRL_MODE"
+                self._connection_state = "CNTRL_MODE"
         elif self._connection_state == "CNTRL_MODE":
             self.read_status()
 
@@ -170,19 +170,20 @@ class XMOS:
         from .components.flashrom_wrapper import Flashrom
 
         self.set_flash_mode()
-        time.sleep(0.5)
-        flasher = Flashrom.for_rpi_w25q64jv(timeout=600)
-        if not flasher.confirm_chip():
-            raise SystemExit("Flash chip not found or not accessible")
+        try:
+            time.sleep(0.5)
+            flasher = Flashrom.for_rpi_w25q64jv(timeout=600)
+            if not flasher.confirm_chip():
+                raise SystemExit("Flash chip not found or not accessible")
 
-        if not img.exists():
-            raise ValueError(f"Image-file not found {img}")
+            if not img.exists():
+                raise ValueError(f"Image-file not found {img}")
 
-        log.info(f"Starting flashing of {img}")
-        flasher.write_image(img, verify=verify)
-
-        self.unset_flash_mode()
-        self._connection_state = "DETACHED"
+            log.info(f"Starting flashing of {img}")
+            flasher.write_image(img, verify=verify)
+            self._connection_state = "DETACHED"
+        finally:
+            self.unset_flash_mode()
 
     def run_spi_echo_test(self):
         for step in range(10):
