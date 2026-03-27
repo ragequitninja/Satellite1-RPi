@@ -71,7 +71,7 @@ class XMOS:
     def read_firmware(self) -> str | None:
         ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
         if not ok or data is None or len(data) != 5:
-            self.wait_until_ready(timeout_s=1.0, poll_interval_s=0.1)
+            self.wait_until_ready(timeout_s=3.0, poll_interval_s=0.1)
             ok, data = self._cntrl.send_cmd(DFU_SERVICER.CMD_GET_VERSION)
         if ok and data is not None and len(data) == 5:
             self._firmware = self._fw_from_bytes(data)
