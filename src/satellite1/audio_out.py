@@ -40,7 +40,13 @@ class DACConfig(BaseModel):
 
 
 class LineOutDacConfig(DACConfig):
-    CONF_GROUPS: ClassVar[tuple[str, ...]] = ("line_out", "line-out", "pcm5122")
+    CONF_GROUPS: ClassVar[tuple[str, ...]] = (
+        "line_out",
+        "line-out",
+        "line_out_dac",
+        "line-out-dac",
+        "pcm5122",
+    )
 
 
 class LineOutDac(PCM5122):
@@ -131,7 +137,12 @@ class NoSpeakerDac:
 
 
 class SpeakerDacConfig(DACConfig):
-    CONF_GROUPS: ClassVar[tuple[str, ...]] = ("speaker", "tas2780")
+    CONF_GROUPS: ClassVar[tuple[str, ...]] = (
+        "speaker",
+        "speaker_dac",
+        "speaker-dac",
+        "tas2780",
+    )
     channel: AudioCh = "dwn_mix"
     amp_level: int = Field(8, ge=0, le=0x14)
 

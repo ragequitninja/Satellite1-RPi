@@ -27,24 +27,23 @@ if TYPE_CHECKING:
 
 def _handle(args: argparse.Namespace) -> int:
     """Dispatch DAC subcommands."""
-    overrides: dict[str, Any] = collect_overrides(
+    line_overrides: dict[str, Any] = collect_overrides(
         args, LineOutDacConfig, prefix=LINE_OUT_PREFIX
     )
-    log.debug("Line-out overrides from CLI: %s", overrides)
+    log.debug("Line-out overrides from CLI: %s", line_overrides)
 
     spk_ovr: dict[str, Any] = collect_overrides(
         args, SpeakerDacConfig, prefix=SPEAKER_PREFIX
     )
     log.debug("Speaker overrides from CLI: %s", spk_ovr)
-    overrides.update(spk_ovr)
 
     cfg_line = load_from_toml(
-        LineOutDacConfig, config_path=args.config, overrides=overrides
+        LineOutDacConfig, config_path=args.config, overrides=line_overrides
     )
     log.debug("Effective LineDac config: %s", cfg_line.model_dump())
 
     cfg_spk = load_from_toml(
-        SpeakerDacConfig, config_path=args.config, overrides=overrides
+        SpeakerDacConfig, config_path=args.config, overrides=spk_ovr
     )
     log.debug("Effective SpkDac config: %s", cfg_spk.model_dump())
 
