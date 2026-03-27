@@ -14,7 +14,7 @@ Deploy and run the current local `Satellite1-RPi` state on a target Pi without t
 ## Persistent paths
 
 Local wheel output directory:
-- `build/e2e_wheels`
+- `build-assets`
 
 Remote paths on Pi:
 - Wheel cache dir: `/home/pi/.cache/satellite1-rpi-e2e/wheels`
@@ -24,12 +24,12 @@ Remote paths on Pi:
 - `SQ66_RPI_HOST` must be set.
 
 ## Deployment sequence
-1. Build wheel from current local repo state:
-   `.venv/bin/python -m pip wheel --no-deps . -w build/e2e_wheels`
+1. Build wheel from current local repo state (preferred):
+   `make build ALLOW_DIRTY=1`
 2. Create persistent remote dirs:
    `ssh "${SQ66_RPI_HOST}" "mkdir -p /home/pi/.cache/satellite1-rpi-e2e/wheels /home/pi/.cache/venvs"`
 3. Copy the newest built wheel to Pi:
-   `scp build/e2e_wheels/satellite1_rpi-*.whl "${SQ66_RPI_HOST}:/home/pi/.cache/satellite1-rpi-e2e/wheels/"`
+   `scp build-assets/satellite1_rpi-*.whl "${SQ66_RPI_HOST}:/home/pi/.cache/satellite1-rpi-e2e/wheels/"`
 4. Ensure temp venv exists on Pi:
    `ssh "${SQ66_RPI_HOST}" "python3 -m venv /home/pi/.cache/venvs/satellite1-rpi-e2e"`
 5. Install/upgrade wheel in temp venv:
@@ -39,13 +39,34 @@ Remote paths on Pi:
    `ssh "${SQ66_RPI_HOST}" "/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --help"`
 
 ## Reusable command for tests
-Use this command prefix on Pi for all temporary test runs:
 
-`/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1`
+For CLI-only tests, use:
+
+`/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --config /home/pi/.cache/satellite1-rpi-e2e/satellite1.conf`
+
+For XMOS HIL suites that use both CLI commands and remote Python `-c` snippets,
+create a wrapper once and reuse it:
+
+`/home/pi/.cache/satellite1-rpi-e2e/sat1_or_python.sh`
+
+Wrapper content:
+
+```bash
+#!/usr/bin/env bash
+set -e
+if [ "${1:-}" = "-c" ]; then
+  exec /home/pi/.cache/venvs/satellite1-rpi-e2e/bin/python "$@"
+fi
+exec /home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --config /home/pi/.cache/satellite1-rpi-e2e/satellite1.conf "$@"
+```
+
+Set executable bit:
+
+`chmod +x /home/pi/.cache/satellite1-rpi-e2e/sat1_or_python.sh`
 
 Example:
 
-`ssh "${SQ66_RPI_HOST}" "/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --board sq66 dac setup"`
+`ssh "${SQ66_RPI_HOST}" "/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --config /home/pi/.cache/satellite1-rpi-e2e/satellite1.conf --board sq66 dac setup"`
 
 ## Notes
 - This workflow is for temporary validation only.
