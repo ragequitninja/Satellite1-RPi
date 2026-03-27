@@ -1,25 +1,24 @@
 name: run-tests
-description: Run project tests with the repository venv, never ambient Python.
+description: Run project tests through Make targets with reproducible local setup.
 
 ## Goal
-Run test commands reliably with the repo interpreter and return concise results.
+Run test targets reliably from the repository root and return concise results.
 
 ## Rules
-- Always use `.venv/bin/python`, never bare `python` or `python3`.
-- Run from repository root.
-- Prefer targeted test runs first if scope is known.
+- Always run from repository root.
+- Use Make targets only; do not call ambient `python` or direct `pytest`.
+- Prefer targeted runs first if scope is known.
 
 ## Commands
 - Full suite:
-  `.venv/bin/python -m pytest`
+  `make test`
 - Single file:
-  `.venv/bin/python -m pytest tests/test_cli/test_cli_dac.py -q`
+  `make test-file FILE=tests/test_cli/test_cli_dac.py`
 - Pattern:
-  `.venv/bin/python -m pytest -k "<pattern>" -q`
+  `make test-k K="<pattern>"`
 
 ## Output format
-- Interpreter used (`.venv/bin/python --version`)
-- Command executed
+- Command run
 - Pass/fail summary
 - First failure with file and assertion
 - Suggested next command

@@ -8,6 +8,7 @@ Deploy and run the current local `Satellite1-RPi` state on a target Pi without t
 - This skill assumes the current repository is the SDK source; do not request a separate SDK path.
 - Never use or modify `/opt/satellite1/venv` in this workflow.
 - Use a dedicated reusable temporary environment on the target Pi.
+- Use Make targets from repository root for deployment orchestration.
 - Use wheel-based deployment; do not sync source trees with rsync in this workflow.
 - Do not delete remote temp files or temp venv after test runs unless explicitly requested.
 
@@ -23,20 +24,30 @@ Remote paths on Pi:
 ## Required local environment
 - `SQ66_RPI_HOST` must be set.
 
-## Deployment sequence
-1. Build wheel from current local repo state (preferred):
-   `make build ALLOW_DIRTY=1`
-2. Create persistent remote dirs:
-   `ssh "${SQ66_RPI_HOST}" "mkdir -p /home/pi/.cache/satellite1-rpi-e2e/wheels /home/pi/.cache/venvs"`
-3. Copy the newest built wheel to Pi:
-   `scp build-assets/satellite1_rpi-*.whl "${SQ66_RPI_HOST}:/home/pi/.cache/satellite1-rpi-e2e/wheels/"`
-4. Ensure temp venv exists on Pi:
-   `ssh "${SQ66_RPI_HOST}" "python3 -m venv /home/pi/.cache/venvs/satellite1-rpi-e2e"`
-5. Install/upgrade wheel in temp venv:
-   `ssh "${SQ66_RPI_HOST}" "/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/python -m pip install -U pip setuptools wheel"`
-   `ssh "${SQ66_RPI_HOST}" "WHEEL=$(ls -1t /home/pi/.cache/satellite1-rpi-e2e/wheels/satellite1_rpi-*.whl | head -n 1) && /home/pi/.cache/venvs/satellite1-rpi-e2e/bin/python -m pip install -U --force-reinstall \"$WHEEL\""`
-6. Verify CLI from temp venv:
-   `ssh "${SQ66_RPI_HOST}" "/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --help"`
+## Commands
+1. Deploy wheel and install into remote temp venv:
+   `make sq66-deploy-temp HOST="${SQ66_RPI_HOST}"`
+2. Verify CLI and board-level command path:
+   `make sq66-verify-temp HOST="${SQ66_RPI_HOST}"`
+
+Optional direct script usage:
+- `./scripts/deploy_temp_sdk.sh --host "${SQ66_RPI_HOST}"`
+- `./scripts/deploy_temp_verify.sh --host "${SQ66_RPI_HOST}" --board sq66`
+
+## Exit code mapping
+- `0`: success
+- `10`: local precondition issue (missing args, tools, host)
+- `20`: local wheel build failed
+- `30`: remote transfer/connectivity failure
+- `40`: remote venv/pip install failure
+- `50`: CLI smoke verification failure
+- `60`: board runtime command failure
+
+## Output format
+- Command run
+- Result summary
+- Exit code category (when non-zero)
+- Suggested next command
 
 ## Reusable command for tests
 
@@ -66,7 +77,7 @@ Set executable bit:
 
 Example:
 
-`ssh "${SQ66_RPI_HOST}" "/home/pi/.cache/venvs/satellite1-rpi-e2e/bin/sat1 --config /home/pi/.cache/satellite1-rpi-e2e/satellite1.conf --board sq66 dac setup"`
+`make sq66-verify-temp HOST="${SQ66_RPI_HOST}"`
 
 ## Notes
 - This workflow is for temporary validation only.
