@@ -164,9 +164,8 @@ class SpeakerDac(TAS2780):
         )
         return cls(tas_config)
 
-    def report_status(self):
-        print("Speaker DAC (TAS2780):")
-        print(self.get_state())
+    def report_status(self) -> str:
+        return f"Speaker DAC (TAS2780): {self.get_state()}"
 
 
 def get_speaker_dac(config: SpeakerDacConfig) -> SpeakerDac:

@@ -17,9 +17,9 @@ class DummyDAC:
         self._setup_called = False
         self._plugged_in = True
 
-    def set_volume(self, v: float) -> float:
+    def set_volume(self, v: float) -> bool:
         self.volume = v
-        return v
+        return True
 
     def set_mute_on(self) -> bool:
         self._muted = True
@@ -120,6 +120,18 @@ def test_set_volume_sets_value_and_prints(dummy_dacs, capsys):
     assert rc == 0
     assert pytest.approx(line_dac.volume, rel=1e-6) == 0.33
     assert "0.33" in captured.out
+
+
+def test_status_prints_two_status_lines(dummy_dacs, capsys):
+    parser = build_parser()
+    args = parser.parse_args(["status"])
+    dac_mod._configure_logging(args.verbose)
+
+    rc = dac_mod._handle(args)
+    captured = capsys.readouterr()
+
+    assert rc == 0
+    assert captured.out.strip().splitlines() == ["line-out:ok", "speaker:ok"]
 
 
 @pytest.mark.parametrize(

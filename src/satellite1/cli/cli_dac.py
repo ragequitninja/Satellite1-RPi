@@ -84,9 +84,9 @@ def _handle(args: argparse.Namespace) -> int:
         print(val)
         return 0
     if args.cmd == "set-volume":
-        val = active_dac.set_volume(args.volume)
-        log.info(f"Set {dac_key} volume to {val}")
-        print(val)
+        ok = active_dac.set_volume(args.volume)
+        log.info("Set %s volume to %.3f (ok=%s)", dac_key, active_dac.volume, ok)
+        print(active_dac.volume)
         return 0
     if args.cmd == "mute":
         state = active_dac.set_mute_on()
@@ -175,8 +175,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--config",
         type=Path,
-        default=Path("/etc/satellite1.conf"),
-        help="TOML config (default: /etc/satellite1.conf)",
+        default=None,
+        help="TOML config (default: search standard paths)",
     )
     p.add_argument(
         "--board",
