@@ -5,6 +5,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from ..board import resolve_board
 from ..sat1_hat import XMOS
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,11 @@ def _fmt_status(val) -> str:
 
 def _handle(args: argparse.Namespace) -> int:
     """Dispatch XMOS subcommands."""
+    board = resolve_board(getattr(args, "board", None), getattr(args, "config", None))
+    guarded_cmds = {"reset", "enable-flashing", "disable-flashing", "flash-firmware"}
+    if board == "sq66" and args.cmd in guarded_cmds:
+        raise SystemExit("XMOS reset/flashing controls are not available on sq66")
+
     xmos = XMOS()
 
     # Non-SPI commands
@@ -208,6 +214,12 @@ def xmos_main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="TOML config (unused for XMOS for now)",
+    )
+    p.add_argument(
+        "--board",
+        choices=["satellite1", "sq66"],
+        default=None,
+        help="Hardware board profile (default: satellite1)",
     )
     p.add_argument(
         "-v",

@@ -45,6 +45,12 @@ def stub_xmos(monkeypatch):
             return True
 
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
+    monkeypatch.setattr(
+        x_cli,
+        "resolve_board",
+        lambda cli_board, config_path: "satellite1",
+        raising=True,
+    )
 
 
 def run(argv, capsys):
@@ -119,6 +125,50 @@ def test_flash_firmware_with_verify(capsys, tmp_path):
     img.write_bytes(b"")
     rc, out = run(["flash-firmware", str(img), "--verify"], capsys)
     assert rc == 0 and out == "True"
+
+
+@pytest.mark.parametrize(
+    "cmd,args",
+    [
+        ("reset", []),
+        ("enable-flashing", []),
+        ("disable-flashing", []),
+        ("flash-firmware", ["factory.bin"]),
+    ],
+)
+def test_sq66_blocks_reset_and_flashing_controls(
+    capsys, monkeypatch, tmp_path, cmd, args
+):
+    monkeypatch.setattr(
+        x_cli,
+        "resolve_board",
+        lambda cli_board, config_path: "sq66",
+        raising=True,
+    )
+
+    argv = ["--board", "sq66", cmd]
+    if cmd == "flash-firmware":
+        img = tmp_path / "factory.bin"
+        img.write_bytes(b"")
+        argv = ["--board", "sq66", cmd, str(img)]
+    else:
+        argv.extend(args)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run(argv, capsys)
+
+    assert "not available on sq66" in str(excinfo.value)
+
+
+def test_sq66_allows_read_status(capsys, monkeypatch):
+    monkeypatch.setattr(
+        x_cli,
+        "resolve_board",
+        lambda cli_board, config_path: "sq66",
+        raising=True,
+    )
+    rc, out = run(["--board", "sq66", "read-status"], capsys)
+    assert rc == 0 and out == "01 02 03"
 
 
 def test_verbose_flags_do_not_crash(capsys):
