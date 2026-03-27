@@ -86,6 +86,15 @@ class AUDIO_PIPELINE_CONTROL:
 
     MIC_INPUT_FIELD_MIC_GAIN = 1 << 0
     MIC_INPUT_FIELD_REF_GAIN = 1 << 1
+    MIC_INPUT_FIELD_REF_SOURCE_MODE = 1 << 5
+    MIC_INPUT_FIELD_MIC_SOURCE_MODE = 1 << 6
+    MIC_INPUT_FIELD_REF_INPUT_CHANNEL_MAP = 1 << 7
+    MIC_INPUT_FIELD_MIC_INPUT_CHANNEL_MAP = 1 << 8
+
+    REF_SOURCE_LEGACY_DOWNSAMPLED = 0
+    REF_SOURCE_PACKAGED_INPUT = 1
+    MIC_SOURCE_PDM = 0
+    MIC_SOURCE_PACKAGED_INPUT = 1
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,10 @@ class SpeakerSettings:
 class MicInputSettings:
     mic_gain: int
     ref_gain: int
+    ref_source_mode: int
+    mic_source_mode: int
+    ref_input_channel_map: tuple[int, int]
+    mic_input_channel_map: tuple[int, int]
 
 
 class SPI_ECHO_SERVICER:
@@ -236,12 +249,28 @@ class XMOSDeviceCntrl:
 
     @staticmethod
     def decode_mic_input_settings(data: bytes) -> MicInputSettings:
-        if len(data) != 8:
+        if len(data) != 16:
             raise ValueError(
-                f"expected 8 bytes for mic input settings, got {len(data)}"
+                f"expected 16 bytes for mic input settings, got {len(data)}"
             )
-        mic_gain, ref_gain = struct.unpack("<2i", data)
-        return MicInputSettings(mic_gain=mic_gain, ref_gain=ref_gain)
+        mic_gain, ref_gain, ref_mode, mic_mode, r0, r1, m0, m1 = struct.unpack(
+            "<2i2B4B2x", data
+        )
+        return MicInputSettings(
+            mic_gain=mic_gain,
+            ref_gain=ref_gain,
+            ref_source_mode=ref_mode,
+            mic_source_mode=mic_mode,
+            ref_input_channel_map=(r0, r1),
+            mic_input_channel_map=(m0, m1),
+        )
+
+    @staticmethod
+    def _validate_mode(name: str, value: int, allowed: set[int]) -> int:
+        if value not in allowed:
+            choices = ", ".join(str(v) for v in sorted(allowed))
+            raise ValueError(f"{name} must be one of {{{choices}}}")
+        return int(value)
 
     @staticmethod
     def encode_mic_output_partial(
@@ -323,11 +352,21 @@ class XMOSDeviceCntrl:
 
     @staticmethod
     def encode_mic_input_settings_partial(
-        *, mic_gain: int | None = None, ref_gain: int | None = None
+        *,
+        mic_gain: int | None = None,
+        ref_gain: int | None = None,
+        ref_source_mode: int | None = None,
+        mic_source_mode: int | None = None,
+        ref_input_channel_map: Sequence[int] | None = None,
+        mic_input_channel_map: Sequence[int] | None = None,
     ) -> bytes:
         field_mask = 0
         mic_gain_value = 0
         ref_gain_value = 0
+        ref_source_mode_value = 0
+        mic_source_mode_value = 0
+        ref_map = [0, 0]
+        mic_map = [0, 0]
 
         if mic_gain is not None:
             field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_GAIN
@@ -337,10 +376,57 @@ class XMOSDeviceCntrl:
             field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_REF_GAIN
             ref_gain_value = int(ref_gain)
 
+        if ref_source_mode is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_REF_SOURCE_MODE
+            ref_source_mode_value = XMOSDeviceCntrl._validate_mode(
+                "ref_source_mode",
+                int(ref_source_mode),
+                {
+                    AUDIO_PIPELINE_CONTROL.REF_SOURCE_LEGACY_DOWNSAMPLED,
+                    AUDIO_PIPELINE_CONTROL.REF_SOURCE_PACKAGED_INPUT,
+                },
+            )
+
+        if mic_source_mode is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_SOURCE_MODE
+            mic_source_mode_value = XMOSDeviceCntrl._validate_mode(
+                "mic_source_mode",
+                int(mic_source_mode),
+                {
+                    AUDIO_PIPELINE_CONTROL.MIC_SOURCE_PDM,
+                    AUDIO_PIPELINE_CONTROL.MIC_SOURCE_PACKAGED_INPUT,
+                },
+            )
+
+        if ref_input_channel_map is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_REF_INPUT_CHANNEL_MAP
+            validated = XMOSDeviceCntrl._validate_channel_map(
+                "ref_input_channel_map", ref_input_channel_map, 2
+            )
+            ref_map[:] = validated
+
+        if mic_input_channel_map is not None:
+            field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_INPUT_CHANNEL_MAP
+            validated = XMOSDeviceCntrl._validate_channel_map(
+                "mic_input_channel_map", mic_input_channel_map, 2
+            )
+            mic_map[:] = validated
+
         if field_mask == 0:
             raise ValueError("at least one mic input setting must be provided")
 
-        return struct.pack("<I2i", field_mask, mic_gain_value, ref_gain_value)
+        return struct.pack(
+            "<I2i2B4B2x",
+            field_mask,
+            mic_gain_value,
+            ref_gain_value,
+            ref_source_mode_value,
+            mic_source_mode_value,
+            ref_map[0],
+            ref_map[1],
+            mic_map[0],
+            mic_map[1],
+        )
 
     def get_mic_output_settings(self) -> MicOutputSettings:
         ok, data = self.transfer(
@@ -407,18 +493,29 @@ class XMOSDeviceCntrl:
             AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
             AUDIO_PIPELINE_CONTROL.CMD_GET_SETTINGS,
             None,
-            8,
+            16,
         )
         if not ok or data is None:
             raise RuntimeError("Failed to read mic input settings")
         return self.decode_mic_input_settings(data)
 
     def set_mic_input_settings_partial(
-        self, *, mic_gain: int | None = None, ref_gain: int | None = None
+        self,
+        *,
+        mic_gain: int | None = None,
+        ref_gain: int | None = None,
+        ref_source_mode: int | None = None,
+        mic_source_mode: int | None = None,
+        ref_input_channel_map: Sequence[int] | None = None,
+        mic_input_channel_map: Sequence[int] | None = None,
     ) -> bool:
         payload = self.encode_mic_input_settings_partial(
             mic_gain=mic_gain,
             ref_gain=ref_gain,
+            ref_source_mode=ref_source_mode,
+            mic_source_mode=mic_source_mode,
+            ref_input_channel_map=ref_input_channel_map,
+            mic_input_channel_map=mic_input_channel_map,
         )
         ok, _ = self.transfer(
             AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,

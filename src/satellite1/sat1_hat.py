@@ -242,6 +242,26 @@ class XMOS:
             ref_gain=ref_gain,
         )
 
+    def set_mic_input_source_modes(
+        self,
+        ref_source_mode: int | None = None,
+        mic_source_mode: int | None = None,
+    ) -> bool:
+        return self._cntrl.set_mic_input_settings_partial(
+            ref_source_mode=ref_source_mode,
+            mic_source_mode=mic_source_mode,
+        )
+
+    def set_mic_input_channel_maps(
+        self,
+        ref_input_channel_map: tuple[int, int] | list[int] | None = None,
+        mic_input_channel_map: tuple[int, int] | list[int] | None = None,
+    ) -> bool:
+        return self._cntrl.set_mic_input_settings_partial(
+            ref_input_channel_map=ref_input_channel_map,
+            mic_input_channel_map=mic_input_channel_map,
+        )
+
     @staticmethod
     def _prerelease_str(idx: int) -> str:
         return {1: "alpha", 2: "beta", 3: "rc", 4: "dev"}.get(idx, "")

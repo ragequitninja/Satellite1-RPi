@@ -28,6 +28,22 @@ def stub_xmos(monkeypatch):
         def set_mic_output_channels(self, left: int, right: int):
             return (left, right) == (1, 2)
 
+        def get_mic_input_settings(self):
+            return "MicInputSettings(mic_gain=1, ref_gain=2, ref_source_mode=1, mic_source_mode=0, ref_input_channel_map=(0, 1), mic_input_channel_map=(2, 3))"
+
+        def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
+            return True
+
+        def set_mic_input_source_modes(
+            self, ref_source_mode=None, mic_source_mode=None
+        ):
+            return True
+
+        def set_mic_input_channel_maps(
+            self, ref_input_channel_map=None, mic_input_channel_map=None
+        ):
+            return True
+
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
 
 
@@ -72,6 +88,22 @@ def test_read_status_handles_missing_payload(capsys, monkeypatch):
         def set_mic_output_channels(self, left: int, right: int):
             return True
 
+        def get_mic_input_settings(self):
+            return ""
+
+        def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
+            return True
+
+        def set_mic_input_source_modes(
+            self, ref_source_mode=None, mic_source_mode=None
+        ):
+            return True
+
+        def set_mic_input_channel_maps(
+            self, ref_input_channel_map=None, mic_input_channel_map=None
+        ):
+            return True
+
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
     rc, out = run(["read-status"], capsys)
     assert rc == 1 and out == "None"
@@ -99,6 +131,47 @@ def test_set_mic_output_uses_new_wrapper(capsys):
     assert rc == 0
 
 
+def test_get_mic_input_settings(capsys):
+    rc, out = run(["get-mic-input-settings"], capsys)
+    assert rc == 0
+    assert "MicInputSettings" in out
+
+
+def test_set_mic_input_gains(capsys):
+    rc, out = run(
+        ["set-mic-input-gains", "--mic-gain", "12", "--ref-gain", "34"], capsys
+    )
+    assert rc == 0
+    assert out == "True"
+
+
+def test_set_mic_input_routing(capsys):
+    rc, out = run(
+        [
+            "set-mic-input-routing",
+            "--ref-source-mode",
+            "1",
+            "--mic-source-mode",
+            "0",
+            "--ref-input-channel-map",
+            "0",
+            "1",
+            "--mic-input-channel-map",
+            "2",
+            "3",
+        ],
+        capsys,
+    )
+    assert rc == 0
+    assert out == "True"
+
+
+def test_set_mic_input_routing_requires_one_arg(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        run(["set-mic-input-routing"], capsys)
+    assert "at least one routing option must be provided" in str(excinfo.value)
+
+
 def test_set_mic_output_returns_failure_code(capsys, monkeypatch):
     class FakeXMOS:
         def setup(self):
@@ -118,6 +191,22 @@ def test_set_mic_output_returns_failure_code(capsys, monkeypatch):
 
         def set_mic_output_channels(self, left: int, right: int):
             return False
+
+        def get_mic_input_settings(self):
+            return ""
+
+        def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
+            return True
+
+        def set_mic_input_source_modes(
+            self, ref_source_mode=None, mic_source_mode=None
+        ):
+            return True
+
+        def set_mic_input_channel_maps(
+            self, ref_input_channel_map=None, mic_input_channel_map=None
+        ):
+            return True
 
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
     rc, _ = run(["set-mic-output", "1", "2"], capsys)
@@ -142,6 +231,22 @@ def test_read_firmware_handles_missing_payload(capsys, monkeypatch):
             return True
 
         def set_mic_output_channels(self, left: int, right: int):
+            return True
+
+        def get_mic_input_settings(self):
+            return ""
+
+        def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
+            return True
+
+        def set_mic_input_source_modes(
+            self, ref_source_mode=None, mic_source_mode=None
+        ):
+            return True
+
+        def set_mic_input_channel_maps(
+            self, ref_input_channel_map=None, mic_input_channel_map=None
+        ):
             return True
 
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)

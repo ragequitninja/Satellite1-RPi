@@ -85,3 +85,44 @@ def test_read_firmware_retries_after_wait_even_when_not_ready():
 
     assert fw == "v1.2.3"
     assert calls["wait"] == 1
+
+
+def test_set_mic_input_source_modes_forwards_to_control_layer():
+    x = XMOS()
+    calls = {}
+
+    def set_mic_input_settings_partial(**kwargs):
+        calls.update(kwargs)
+        return True
+
+    x._cntrl = SimpleNamespace(
+        set_mic_input_settings_partial=set_mic_input_settings_partial
+    )
+
+    ok = x.set_mic_input_source_modes(ref_source_mode=1, mic_source_mode=0)
+
+    assert ok is True
+    assert calls == {"ref_source_mode": 1, "mic_source_mode": 0}
+
+
+def test_set_mic_input_channel_maps_forwards_to_control_layer():
+    x = XMOS()
+    calls = {}
+
+    def set_mic_input_settings_partial(**kwargs):
+        calls.update(kwargs)
+        return True
+
+    x._cntrl = SimpleNamespace(
+        set_mic_input_settings_partial=set_mic_input_settings_partial
+    )
+
+    ok = x.set_mic_input_channel_maps(
+        ref_input_channel_map=(0, 1), mic_input_channel_map=(2, 3)
+    )
+
+    assert ok is True
+    assert calls == {
+        "ref_input_channel_map": (0, 1),
+        "mic_input_channel_map": (2, 3),
+    }

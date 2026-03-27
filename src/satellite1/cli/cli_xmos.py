@@ -76,6 +76,47 @@ def _handle(args: argparse.Namespace) -> int:
         log.info(f"Set mic channels to {args.left} and {args.right}")
         return 0 if xmos.set_mic_output_channels(args.left, args.right) else 1
 
+    if args.cmd == "get-mic-input-settings":
+        settings = xmos.get_mic_input_settings()
+        print(settings)
+        return 0
+
+    if args.cmd == "set-mic-input-gains":
+        ok = xmos.set_mic_input_gains(
+            mic_gain=args.mic_gain,
+            ref_gain=args.ref_gain,
+        )
+        print(ok)
+        return 0 if ok else 1
+
+    if args.cmd == "set-mic-input-routing":
+        kwargs = {
+            "ref_source_mode": args.ref_source_mode,
+            "mic_source_mode": args.mic_source_mode,
+            "ref_input_channel_map": tuple(args.ref_input_channel_map)
+            if args.ref_input_channel_map is not None
+            else None,
+            "mic_input_channel_map": tuple(args.mic_input_channel_map)
+            if args.mic_input_channel_map is not None
+            else None,
+        }
+        if all(v is None for v in kwargs.values()):
+            raise SystemExit("at least one routing option must be provided")
+        ok = xmos.set_mic_input_channel_maps(
+            ref_input_channel_map=kwargs["ref_input_channel_map"],
+            mic_input_channel_map=kwargs["mic_input_channel_map"],
+        )
+        if ok and (
+            kwargs["ref_source_mode"] is not None
+            or kwargs["mic_source_mode"] is not None
+        ):
+            ok = xmos.set_mic_input_source_modes(
+                ref_source_mode=kwargs["ref_source_mode"],
+                mic_source_mode=kwargs["mic_source_mode"],
+            )
+        print(ok)
+        return 0 if ok else 1
+
     if args.cmd == "run-spi-test":
         log.info("Starting SPI Test")
         xmos.run_spi_echo_test()
@@ -103,6 +144,20 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
     )
     mo.add_argument("left", type=int)
     mo.add_argument("right", type=int)
+
+    sp.add_parser("get-mic-input-settings", help="Get mic-input pipeline settings")
+
+    mig = sp.add_parser("set-mic-input-gains", help="Set mic-input gain fields")
+    mig.add_argument("--mic-gain", type=int, default=None)
+    mig.add_argument("--ref-gain", type=int, default=None)
+
+    mir = sp.add_parser(
+        "set-mic-input-routing", help="Set mic-input source modes and channel maps"
+    )
+    mir.add_argument("--ref-source-mode", type=int, default=None)
+    mir.add_argument("--mic-source-mode", type=int, default=None)
+    mir.add_argument("--ref-input-channel-map", type=int, nargs=2, default=None)
+    mir.add_argument("--mic-input-channel-map", type=int, nargs=2, default=None)
 
     f = sp.add_parser("flash-firmware", help="Flash factory image")
     f.add_argument("img", type=Path)
