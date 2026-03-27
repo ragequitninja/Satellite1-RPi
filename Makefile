@@ -6,6 +6,8 @@ DOCKER        ?= docker
 PLATFORM      ?= linux/arm64
 DOCKER_MAKE   ?= docker/Makefile
 DOCKER_IMAGE  ?= satellite1-deb-builder
+DOCKER_TTY    ?= $(shell [ -t 1 ] && echo "-it")
+DOCKER_RUN_FLAGS ?= --rm $(DOCKER_TTY)
 
 OUT_DIR       ?= ${PWD}/build-assets
 DEB_TARGET    := ${OUT_DIR}/$(PACKAGE_NAME)_$(SDK_VERSION)_$(ARCH).deb
@@ -17,8 +19,8 @@ LOCAL_VENV    ?= ${PWD}/.venv
 PYTHON        ?= python3.11
 
 # --- Metadata ---
-PYPROJ_VERSION := $(shell $(PYTHON) -m setuptools_scm)
-PYPROJ_RELEASE := $(shell $(PYTHON) -m setuptools_scm --strip-dev)
+PYPROJ_VERSION := $(shell $(PYTHON) -m setuptools_scm 2>/dev/null || echo unknown)
+PYPROJ_RELEASE := $(shell $(PYTHON) -m setuptools_scm --strip-dev 2>/dev/null || echo unknown)
 
 GIT_NAME := $(shell git config user.name)
 GIT_EMAIL := $(shell git config user.email)
@@ -53,7 +55,7 @@ docker-image:
 	$(MAKE) -C ./docker deb-image
 
 build: verify-git-is-clean | $(OUT_DIR)
-	$(DOCKER) run --rm -it \
+	$(DOCKER) run $(DOCKER_RUN_FLAGS) \
 		-v "${PWD}":/work \
 		-v "${OUT_DIR}":/out \
 		$(DOCKER_IMAGE) \
@@ -106,7 +108,7 @@ clean:
 	rm -rf "$(BUILD_DIR)" "$(DEB_TARGET)"
 
 shell: docker-image
-	$(DOCKER) run --rm -it \
+	$(DOCKER) run $(DOCKER_RUN_FLAGS) \
 		-v "${PWD}":/work \
 		-e "EDITOR=/usr/bin/vim" \
 		-e "DEBEMAIL=$(GIT_EMAIL)" \
