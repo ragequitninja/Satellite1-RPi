@@ -1,18 +1,28 @@
 import time
 from pathlib import Path
 
-base = None
-for p in Path("/sys/class/hwmon").glob("hwmon*/name"):
-    if p.read_text().strip() == "aht10":
-        base = p.parent
-        break
-assert base, "AHT hwmon device not found"
 
-t_file = base / "temp1_input"
-h_file = base / "humidity1_input"
+def find_aht20_hwmon_base() -> Path:
+    for path in Path("/sys/class/hwmon").glob("hwmon*/name"):
+        if path.read_text().strip() == "aht10":
+            return path.parent
+    raise RuntimeError("AHT hwmon device not found")
 
-for _ in range(5):
-    t = int(t_file.read_text()) / 1000.0
-    h = int(h_file.read_text()) / 1000.0
-    print(f"T={t:.3f} °C  RH={h:.3f} %")
-    time.sleep(1)
+
+def read_temperature_humidity(base: Path | None = None) -> tuple[float, float]:
+    hwmon_base = base or find_aht20_hwmon_base()
+    temperature = int((hwmon_base / "temp1_input").read_text()) / 1000.0
+    humidity = int((hwmon_base / "humidity1_input").read_text()) / 1000.0
+    return temperature, humidity
+
+
+def main(samples: int = 5, interval_s: float = 1.0) -> int:
+    for _ in range(samples):
+        temp_c, rh = read_temperature_humidity()
+        print(f"T={temp_c:.3f} C  RH={rh:.3f} %")
+        time.sleep(interval_s)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
