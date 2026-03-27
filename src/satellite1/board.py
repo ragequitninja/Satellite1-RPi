@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from pathlib import Path
@@ -10,6 +11,7 @@ from .config_load import DEFAULT_PATHS
 BoardId = Literal["satellite1", "sq66"]
 
 DEFAULT_BOARD: BoardId = "satellite1"
+log = logging.getLogger(__name__)
 
 
 def _normalize_board(value: str | None) -> BoardId | None:
@@ -34,7 +36,8 @@ def _board_from_config(config_path: Path | None) -> BoardId | None:
     try:
         with config_path.open("rb") as f:
             raw = tomllib.load(f)
-    except Exception:
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        log.warning("Unable to read board from %s: %s", config_path, exc)
         return None
 
     for key in ("global", "sat1", "satellite1"):
