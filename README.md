@@ -252,14 +252,32 @@ Shows current USB-C Power Delivery contract.
 ### Local setup
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .[dev]
+make venv
+make dev-install
 ```
 
-### Run tests
+### Development checks
 
 ```bash
-PYTHONPATH=src python -m pytest
+make test
+make test-file FILE=tests/test_cli/test_cli_dac.py
+make test-k K="sq66 or board_selection"
+make sq66-test
+make lint
+make typecheck
+make precommit
+make check
+```
+
+For a full list of development and debug targets:
+
+```bash
+make help
+```
+
+### SQ66 temporary deploy (dev/debug)
+
+```bash
+make sq66-deploy-temp HOST="$SQ66_RPI_HOST"
+make sq66-verify-temp HOST="$SQ66_RPI_HOST"
 ```
