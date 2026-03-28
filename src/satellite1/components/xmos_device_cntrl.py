@@ -73,6 +73,7 @@ class AUDIO_PIPELINE_CONTROL:
 
     CMD_GET_SETTINGS = 0 | CntrlProto.CMD_READ_BIT
     CMD_SET_SETTINGS_PARTIAL = 1
+    CMD_GET_AVAILABLE_MIC_COUNT = 2 | CntrlProto.CMD_READ_BIT
 
     MIC_OUTPUT_I2S_CHANNEL_COUNT = 2
     MIC_OUTPUT_PACKED_CHANNEL_COUNT = 6
@@ -117,7 +118,7 @@ class MicInputSettings:
     ref_source_mode: int
     mic_source_mode: int
     ref_input_channel_map: tuple[int, int]
-    mic_input_channel_map: tuple[int, int]
+    mic_input_channel_map: tuple[int, int, int, int]
 
 
 class SPI_ECHO_SERVICER:
@@ -200,8 +201,8 @@ class XMOSDeviceCntrl:
 
     @staticmethod
     def _validate_channel_index(channel_index: int) -> int:
-        if not 0 <= channel_index <= 5:
-            raise ValueError("channel index must be in range 0..5")
+        if not 0 <= channel_index <= 7:
+            raise ValueError("channel index must be in range 0..7")
         return channel_index
 
     @staticmethod
@@ -253,16 +254,15 @@ class XMOSDeviceCntrl:
             raise ValueError(
                 f"expected 16 bytes for mic input settings, got {len(data)}"
             )
-        mic_gain, ref_gain, ref_mode, mic_mode, r0, r1, m0, m1 = struct.unpack(
-            "<2i2B4B2x", data
-        )
+        unpacked = struct.unpack("<2i2B6B", data)
+        mic_gain, ref_gain, ref_mode, mic_mode, r0, r1, m0, m1, m2, m3 = unpacked
         return MicInputSettings(
             mic_gain=mic_gain,
             ref_gain=ref_gain,
             ref_source_mode=ref_mode,
             mic_source_mode=mic_mode,
             ref_input_channel_map=(r0, r1),
-            mic_input_channel_map=(m0, m1),
+            mic_input_channel_map=(m0, m1, m2, m3),
         )
 
     @staticmethod
@@ -366,7 +366,7 @@ class XMOSDeviceCntrl:
         ref_source_mode_value = 0
         mic_source_mode_value = 0
         ref_map = [0, 0]
-        mic_map = [0, 0]
+        mic_map = [0, 0, 0, 0]
 
         if mic_gain is not None:
             field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_GAIN
@@ -408,7 +408,7 @@ class XMOSDeviceCntrl:
         if mic_input_channel_map is not None:
             field_mask |= AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_INPUT_CHANNEL_MAP
             validated = XMOSDeviceCntrl._validate_channel_map(
-                "mic_input_channel_map", mic_input_channel_map, 2
+                "mic_input_channel_map", mic_input_channel_map, 4
             )
             mic_map[:] = validated
 
@@ -416,7 +416,7 @@ class XMOSDeviceCntrl:
             raise ValueError("at least one mic input setting must be provided")
 
         return struct.pack(
-            "<I2i2B4B2x",
+            "<I2i2B6B",
             field_mask,
             mic_gain_value,
             ref_gain_value,
@@ -426,6 +426,8 @@ class XMOSDeviceCntrl:
             ref_map[1],
             mic_map[0],
             mic_map[1],
+            mic_map[2],
+            mic_map[3],
         )
 
     def get_mic_output_settings(self) -> MicOutputSettings:
@@ -498,6 +500,17 @@ class XMOSDeviceCntrl:
         if not ok or data is None:
             raise RuntimeError("Failed to read mic input settings")
         return self.decode_mic_input_settings(data)
+
+    def get_available_mic_count(self) -> int:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_AVAILABLE_MIC_COUNT,
+            None,
+            1,
+        )
+        if not ok or data is None or len(data) != 1:
+            raise RuntimeError("Failed to read available mic count")
+        return data[0]
 
     def set_mic_input_settings_partial(
         self,

@@ -121,14 +121,21 @@ def test_set_mic_input_channel_maps_forwards_to_control_layer():
     )
 
     ok = x.set_mic_input_channel_maps(
-        ref_input_channel_map=(0, 1), mic_input_channel_map=(2, 3)
+        ref_input_channel_map=(0, 1), mic_input_channel_map=(2, 3, 4, 5)
     )
 
     assert ok is True
     assert calls == {
         "ref_input_channel_map": (0, 1),
-        "mic_input_channel_map": (2, 3),
+        "mic_input_channel_map": (2, 3, 4, 5),
     }
+
+
+def test_get_available_mic_count_forwards_to_control_layer():
+    x = XMOS()
+    x._cntrl = SimpleNamespace(get_available_mic_count=lambda: 4)
+
+    assert x.get_available_mic_count() == 4
 
 
 def test_poll_transitions_to_control_mode_when_firmware_is_read(monkeypatch):

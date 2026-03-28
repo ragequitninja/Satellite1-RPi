@@ -235,6 +235,9 @@ class XMOS:
     def get_mic_input_settings(self) -> MicInputSettings:
         return self._cntrl.get_mic_input_settings()
 
+    def get_available_mic_count(self) -> int:
+        return self._cntrl.get_available_mic_count()
+
     def set_mic_input_gains(
         self, mic_gain: int | None = None, ref_gain: int | None = None
     ) -> bool:
@@ -256,7 +259,7 @@ class XMOS:
     def set_mic_input_channel_maps(
         self,
         ref_input_channel_map: tuple[int, int] | list[int] | None = None,
-        mic_input_channel_map: tuple[int, int] | list[int] | None = None,
+        mic_input_channel_map: tuple[int, int, int, int] | list[int] | None = None,
     ) -> bool:
         return self._cntrl.set_mic_input_settings_partial(
             ref_input_channel_map=ref_input_channel_map,

@@ -293,14 +293,14 @@ def test_encode_mic_input_settings_partial_requires_field():
 def test_decode_mic_input_settings_round_trip_shape():
     mod, _ = load_module_with_stubbed_spidev()
     settings = mod.XMOSDeviceCntrl.decode_mic_input_settings(
-        struct.pack("<2i2B4B2x", 0x40000000, 0x20000000, 1, 0, 0, 1, 2, 3)
+        struct.pack("<2i2B6B", 0x40000000, 0x20000000, 1, 0, 0, 1, 2, 3, 4, 5)
     )
     assert settings.mic_gain == 0x40000000
     assert settings.ref_gain == 0x20000000
     assert settings.ref_source_mode == 1
     assert settings.mic_source_mode == 0
     assert settings.ref_input_channel_map == (0, 1)
-    assert settings.mic_input_channel_map == (2, 3)
+    assert settings.mic_input_channel_map == (2, 3, 4, 5)
 
 
 def test_set_mic_input_settings_partial_sends_new_resource_command():
@@ -322,7 +322,7 @@ def test_get_mic_input_settings_reads_new_resource_command():
     dev._spi.queue(
         [0x02, 0x00, 0x00],
         [mod.CntrlProto.RET_PAYLOAD_AVAILABLE]
-        + list(struct.pack("<2i2B4B2x", 3, 4, 1, 1, 0, 1, 2, 3)),
+        + list(struct.pack("<2i2B6B", 3, 4, 1, 1, 0, 1, 2, 3, 4, 5)),
     )
     settings = dev.get_mic_input_settings()
     assert settings.mic_gain == 3
@@ -330,7 +330,7 @@ def test_get_mic_input_settings_reads_new_resource_command():
     assert settings.ref_source_mode == 1
     assert settings.mic_source_mode == 1
     assert settings.ref_input_channel_map == (0, 1)
-    assert settings.mic_input_channel_map == (2, 3)
+    assert settings.mic_input_channel_map == (2, 3, 4, 5)
     dev.close()
 
 
@@ -340,7 +340,7 @@ def test_encode_mic_input_settings_partial_with_routing_fields():
         ref_source_mode=1,
         mic_source_mode=1,
         ref_input_channel_map=(0, 1),
-        mic_input_channel_map=(2, 3),
+        mic_input_channel_map=(2, 3, 4, 5),
     )
     field_mask = int.from_bytes(payload[:4], "little")
     assert field_mask == (
@@ -349,7 +349,7 @@ def test_encode_mic_input_settings_partial_with_routing_fields():
         | mod.AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_REF_INPUT_CHANNEL_MAP
         | mod.AUDIO_PIPELINE_CONTROL.MIC_INPUT_FIELD_MIC_INPUT_CHANNEL_MAP
     )
-    assert payload[12:18] == bytes([1, 1, 0, 1, 2, 3])
+    assert payload[12:20] == bytes([1, 1, 0, 1, 2, 3, 4, 5])
 
 
 def test_encode_mic_input_settings_partial_rejects_invalid_modes_or_maps():
@@ -362,3 +362,24 @@ def test_encode_mic_input_settings_partial_rejects_invalid_modes_or_maps():
         mod.XMOSDeviceCntrl.encode_mic_input_settings_partial(
             ref_input_channel_map=(0, 6)
         )
+    with pytest.raises(ValueError, match="must contain 4 values"):
+        mod.XMOSDeviceCntrl.encode_mic_input_settings_partial(
+            mic_input_channel_map=(0, 1)
+        )
+
+
+def test_get_available_mic_count_reads_single_byte_response():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE, 4],
+    )
+
+    count = dev.get_available_mic_count()
+
+    assert count == 4
+    assert dev._spi.last_tx[0] == 0
+    assert dev._spi.last_tx[1] == 0
+    dev.close()
