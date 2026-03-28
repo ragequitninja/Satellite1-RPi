@@ -220,7 +220,7 @@ def test_get_mic_output_settings_reads_new_resource_command():
 def test_encode_mic_output_partial_rejects_invalid_channel_index():
     mod, _ = load_module_with_stubbed_spidev()
     with pytest.raises(ValueError, match="channel index"):
-        mod.XMOSDeviceCntrl.encode_mic_output_partial(i2s_channel_map=(0, 6))
+        mod.XMOSDeviceCntrl.encode_mic_output_partial(i2s_channel_map=(0, 8))
 
 
 def test_encode_mic_output_partial_requires_field():
@@ -360,7 +360,7 @@ def test_encode_mic_input_settings_partial_rejects_invalid_modes_or_maps():
         mod.XMOSDeviceCntrl.encode_mic_input_settings_partial(mic_source_mode=2)
     with pytest.raises(ValueError, match="channel index"):
         mod.XMOSDeviceCntrl.encode_mic_input_settings_partial(
-            ref_input_channel_map=(0, 6)
+            ref_input_channel_map=(0, 8)
         )
     with pytest.raises(ValueError, match="must contain 4 values"):
         mod.XMOSDeviceCntrl.encode_mic_input_settings_partial(
