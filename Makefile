@@ -23,6 +23,7 @@ PYTEST        ?= $(VENV_PY) -m pytest
 RUFF          ?= $(LOCAL_VENV)/bin/ruff
 MYPY          ?= $(LOCAL_VENV)/bin/mypy
 PRECOMMIT     ?= $(LOCAL_VENV)/bin/pre-commit
+DURATION      ?= 1
 
 # --- Metadata ---
 PYPROJ_VERSION := $(shell $(PYTHON) -m setuptools_scm 2>/dev/null || echo unknown)
@@ -51,7 +52,7 @@ print-meta:
 	@echo "GIT_NAME=$(GIT_NAME)"
 	@echo "GIT_EMAIL=$(GIT_EMAIL)"
 
-.PHONY: all shell deb docker-image clean help venv dev-install test test-file test-k lint typecheck precommit check sq66-test sq66-deploy-temp sq66-verify-temp
+.PHONY: all shell deb docker-image clean help venv dev-install test test-file test-k lint typecheck precommit check sq66-test sq66-deploy-temp sq66-verify-temp hil-audio
 
 help:
 	@echo "Common targets:"
@@ -68,6 +69,7 @@ help:
 	@echo "  make sq66-test                         Run SQ66-focused pytest selection"
 	@echo "  make sq66-deploy-temp HOST=user@ip     Dev/debug temp wheel deploy to Pi"
 	@echo "  make sq66-verify-temp HOST=user@ip     Verify temp deploy on Pi"
+	@echo "  make hil-audio [DURATION=1]            Run on-device ALSA capture HIL checks"
 
 all: $(DEB_TARGET) build
 
@@ -171,6 +173,10 @@ sq66-deploy-temp:
 sq66-verify-temp:
 	@test -n "$(HOST)" || { echo "Usage: make sq66-verify-temp HOST=user@ip"; exit 10; }
 	@./scripts/deploy_temp_verify.sh --host "$(HOST)" --board sq66
+
+
+hil-audio:
+	@./scripts/hil_audio.sh --duration "$(DURATION)"
 
 
 .PHONY: kernel-pkg

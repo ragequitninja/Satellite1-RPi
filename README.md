@@ -281,11 +281,14 @@ make test
 make test-file FILE=tests/test_cli/test_cli_dac.py
 make test-k K="sq66 or board_selection"
 make sq66-test
+make hil-audio
 make lint
 make typecheck
 make precommit
 make check
 ```
+
+`make hil-audio` is a hardware-in-the-loop ALSA capture contract check for on-device runs.
 
 For a full list of development and debug targets:
 
