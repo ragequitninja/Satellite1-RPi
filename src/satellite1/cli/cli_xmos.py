@@ -10,6 +10,46 @@ from ..sat1_hat import XMOS
 
 log = logging.getLogger(__name__)
 
+MAX_MIC_INPUT_CHANNEL_MAP_LEN = 4
+
+
+def _resolve_mic_input_channel_map(
+    xmos: XMOS, mic_input_channel_map: list[int] | None
+) -> tuple[int, int, int, int] | None:
+    if mic_input_channel_map is None:
+        return None
+
+    if len(mic_input_channel_map) > MAX_MIC_INPUT_CHANNEL_MAP_LEN:
+        raise SystemExit(
+            f"mic input channel map supports at most {MAX_MIC_INPUT_CHANNEL_MAP_LEN} values"
+        )
+
+    available_mic_count = xmos.get_available_mic_count()
+    if not 0 < available_mic_count <= MAX_MIC_INPUT_CHANNEL_MAP_LEN:
+        raise SystemExit(
+            f"invalid available mic count reported by firmware: {available_mic_count}"
+        )
+
+    if len(mic_input_channel_map) != available_mic_count:
+        raise SystemExit(
+            "mic input channel map must provide exactly "
+            f"{available_mic_count} values for this firmware"
+        )
+
+    if available_mic_count == MAX_MIC_INPUT_CHANNEL_MAP_LEN:
+        return (
+            mic_input_channel_map[0],
+            mic_input_channel_map[1],
+            mic_input_channel_map[2],
+            mic_input_channel_map[3],
+        )
+
+    settings = xmos.get_mic_input_settings()
+    resolved = list(mic_input_channel_map) + list(
+        settings.mic_input_channel_map[available_mic_count:]
+    )
+    return (resolved[0], resolved[1], resolved[2], resolved[3])
+
 
 def _fmt_status(val) -> str:
     """Best-effort human-readable status."""
@@ -87,6 +127,10 @@ def _handle(args: argparse.Namespace) -> int:
         print(settings)
         return 0
 
+    if args.cmd == "get-available-mic-count":
+        print(xmos.get_available_mic_count())
+        return 0
+
     if args.cmd == "set-mic-input-gains":
         ok = xmos.set_mic_input_gains(
             mic_gain=args.mic_gain,
@@ -102,9 +146,9 @@ def _handle(args: argparse.Namespace) -> int:
             "ref_input_channel_map": tuple(args.ref_input_channel_map)
             if args.ref_input_channel_map is not None
             else None,
-            "mic_input_channel_map": tuple(args.mic_input_channel_map)
-            if args.mic_input_channel_map is not None
-            else None,
+            "mic_input_channel_map": _resolve_mic_input_channel_map(
+                xmos, args.mic_input_channel_map
+            ),
         }
         if all(v is None for v in kwargs.values()):
             raise SystemExit("at least one routing option must be provided")
@@ -152,6 +196,9 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
     mo.add_argument("right", type=int)
 
     sp.add_parser("get-mic-input-settings", help="Get mic-input pipeline settings")
+    sp.add_parser(
+        "get-available-mic-count", help="Get available mic-input channel count"
+    )
 
     mig = sp.add_parser("set-mic-input-gains", help="Set mic-input gain fields")
     mig.add_argument("--mic-gain", type=int, default=None)
@@ -163,7 +210,7 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
     mir.add_argument("--ref-source-mode", type=int, default=None)
     mir.add_argument("--mic-source-mode", type=int, default=None)
     mir.add_argument("--ref-input-channel-map", type=int, nargs=2, default=None)
-    mir.add_argument("--mic-input-channel-map", type=int, nargs=2, default=None)
+    mir.add_argument("--mic-input-channel-map", type=int, nargs="+", default=None)
 
     f = sp.add_parser("flash-firmware", help="Flash factory image")
     f.add_argument("img", type=Path)

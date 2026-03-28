@@ -29,7 +29,10 @@ def stub_xmos(monkeypatch):
             return (left, right) == (1, 2)
 
         def get_mic_input_settings(self):
-            return "MicInputSettings(mic_gain=1, ref_gain=2, ref_source_mode=1, mic_source_mode=0, ref_input_channel_map=(0, 1), mic_input_channel_map=(2, 3))"
+            return "MicInputSettings(mic_gain=1, ref_gain=2, ref_source_mode=1, mic_source_mode=0, ref_input_channel_map=(0, 1), mic_input_channel_map=(2, 3, 4, 5))"
+
+        def get_available_mic_count(self):
+            return 4
 
         def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
             return True
@@ -96,6 +99,9 @@ def test_read_status_handles_missing_payload(capsys, monkeypatch):
 
         def get_mic_input_settings(self):
             return ""
+
+        def get_available_mic_count(self):
+            return 4
 
         def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
             return True
@@ -187,6 +193,12 @@ def test_get_mic_input_settings(capsys):
     assert "MicInputSettings" in out
 
 
+def test_get_available_mic_count(capsys):
+    rc, out = run(["get-available-mic-count"], capsys)
+    assert rc == 0
+    assert out == "4"
+
+
 def test_set_mic_input_gains(capsys):
     rc, out = run(
         ["set-mic-input-gains", "--mic-gain", "12", "--ref-gain", "34"], capsys
@@ -209,6 +221,8 @@ def test_set_mic_input_routing(capsys):
             "--mic-input-channel-map",
             "2",
             "3",
+            "4",
+            "5",
         ],
         capsys,
     )
@@ -244,6 +258,9 @@ def test_set_mic_output_returns_failure_code(capsys, monkeypatch):
 
         def get_mic_input_settings(self):
             return ""
+
+        def get_available_mic_count(self):
+            return 4
 
         def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
             return True
@@ -286,6 +303,9 @@ def test_read_firmware_handles_missing_payload(capsys, monkeypatch):
         def get_mic_input_settings(self):
             return ""
 
+        def get_available_mic_count(self):
+            return 4
+
         def set_mic_input_gains(self, mic_gain=None, ref_gain=None):
             return True
 
@@ -302,3 +322,69 @@ def test_read_firmware_handles_missing_payload(capsys, monkeypatch):
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
     rc, out = run(["read-firmware"], capsys)
     assert rc == 1 and out == "None"
+
+
+def test_set_mic_input_routing_pads_to_full_payload_when_firmware_uses_two_mics(
+    capsys, monkeypatch
+):
+    calls = {}
+
+    class FakeXMOS:
+        def setup(self):
+            return True
+
+        def get_available_mic_count(self):
+            return 2
+
+        def get_mic_input_settings(self):
+            return type(
+                "Settings",
+                (),
+                {"mic_input_channel_map": (2, 3, 4, 5)},
+            )()
+
+        def set_mic_input_channel_maps(
+            self, ref_input_channel_map=None, mic_input_channel_map=None
+        ):
+            calls["ref_input_channel_map"] = ref_input_channel_map
+            calls["mic_input_channel_map"] = mic_input_channel_map
+            return True
+
+        def set_mic_input_source_modes(
+            self, ref_source_mode=None, mic_source_mode=None
+        ):
+            calls["ref_source_mode"] = ref_source_mode
+            calls["mic_source_mode"] = mic_source_mode
+            return True
+
+    monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
+
+    rc, out = run(
+        [
+            "set-mic-input-routing",
+            "--mic-input-channel-map",
+            "0",
+            "1",
+        ],
+        capsys,
+    )
+
+    assert rc == 0
+    assert out == "True"
+    assert calls["mic_input_channel_map"] == (0, 1, 4, 5)
+
+
+def test_set_mic_input_routing_rejects_wrong_mic_count(capsys, monkeypatch):
+    class FakeXMOS:
+        def setup(self):
+            return True
+
+        def get_available_mic_count(self):
+            return 2
+
+    monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run(["set-mic-input-routing", "--mic-input-channel-map", "0", "1", "2"], capsys)
+
+    assert "exactly 2 values" in str(excinfo.value)
