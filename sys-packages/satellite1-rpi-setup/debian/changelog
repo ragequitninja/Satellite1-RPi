@@ -1,3 +1,10 @@
+satellite1-rpi-setup (1.0-2) unstable; urgency=medium
+
+  * ALSA: make default capture path 16 kHz and add explicit raw 48 kHz capture PCM.
+  * ALSA: document zero-order-hold decimation behavior in shipped configuration.
+
+ -- Mischa Siekmann <mischa.siekmann@futureproofhomes.net>  Sat, 28 Mar 2026 12:00:00 +0000
+
 satellite1-rpi-setup (1.0-1) unstable; urgency=medium
 
   * Initial release: Install Raspberry Pi fusb302 kernel & device tree overlays.

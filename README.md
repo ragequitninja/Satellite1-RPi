@@ -92,6 +92,24 @@ Installs and configures:
 - Adds sensor overlay:
   `i2c-sensor,addr=0x38,chip=aht20`
 
+#### ALSA capture behavior
+
+The XMOS capture stream is physically clocked at 48 kHz, but microphone content is effectively
+16 kHz bandwidth. The setup package configures ALSA as follows:
+
+- `default` capture path (`satellite1_capture`) is fixed to 16 kHz.
+- `satellite1_capture_raw48` is available for diagnostics/scripts that need the raw 48 kHz stream.
+
+Examples:
+
+```bash
+# Recommended capture path for normal applications
+arecord -D default -r 16000 -f S32_LE -c 2 out_16k.wav
+
+# Raw 48 kHz path for custom unpacking/analysis
+arecord -D satellite1_capture_raw48 -r 48000 -f S32_LE -c 2 out_raw48.wav
+```
+
 ---
 
 ### 3. Python Satellite1 SDK
