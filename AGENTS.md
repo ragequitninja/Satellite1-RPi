@@ -11,7 +11,7 @@ Guidance for coding agents working in `Satellite1-RPi`.
 ## Repository layout
 - `src/satellite1/`: SDK code, CLI entrypoints, hardware/component abstractions.
 - `tests/`: pytest suite (CLI, config, board selection, component behavior).
-- `scripts/`: deployment/verification shell scripts for SQ66 workflows.
+- `scripts/`: deployment/verification shell scripts for temp wheel and Debian package flows.
 - `debian/`, `sys-packages/`, `image-builder/`: packaging and image build support.
 
 ## OpenCode execution rules
@@ -81,6 +81,10 @@ Do not substitute bash for native tools.
   - `make build`
 - Build Debian package:
   - `make deb`
+- Build XMOS firmware payload Debian package:
+  - `make xmos-firmware-deb`
+- Build XMOS firmware package from GitHub release artifact:
+  - `make xmos-firmware-deb-from-gh XMOS_FW_VERSION=vX.Y.Z`
 - Build Docker image used for Debian builds:
   - `make docker-image`
 - Build setup/kernel package artifacts:
@@ -94,9 +98,20 @@ Do not substitute bash for native tools.
   - `make test-file FILE=<path>`
 - Keyword tests:
   - `make test-k K='<expr>'`
-- SQ66 deploy/verify:
-  - `make sq66-deploy-temp HOST=user@ip`
-  - `make sq66-verify-temp HOST=user@ip`
+- Generic temp deploy/verify:
+  - `make deploy-temp HOST=user@ip`
+  - `make verify-temp HOST=user@ip BOARD=sq66`
+- Generic Debian deploy:
+  - `make deploy-deb HOST=user@ip`
+  - `make deploy-xmos-firmware-deb HOST=user@ip`
+- GitHub release firmware fetch/deploy:
+  - `make xmos-firmware-fetch XMOS_FW_VERSION=vX.Y.Z`
+  - `make deploy-xmos-firmware-deb-from-gh HOST=user@ip XMOS_FW_VERSION=vX.Y.Z`
+- Host defaults via `.env`:
+  - `SAT1_HOST` (general deploy targets)
+  - `SQ66_HOST` (SQ66 alias targets)
+- Firmware fetch defaults via `.env`:
+  - `XMOS_FW_REPO`, `XMOS_FW_ASSET`, `XMOS_FW_BIN`, `XMOS_FW_MD5`, `XMOS_FW_OUT_DIR`
 
 ## Code style and conventions
 

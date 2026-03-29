@@ -10,6 +10,7 @@ This repository contains all components required to run the Satellite1-HAT on a 
 
 - **`satellite1-rpi`** — Python SDK library
 - **`satellite1-rpi-setup`** — Raspberry Pi configuration packaged as a `.deb`
+- **`satellite1-xmos-firmware`** — XMOS firmware payload packaged as a `.deb` (artifact install, no auto-flash)
 - **`rpi-kernel-fusb302`** — Custom Raspberry Pi kernel with USB-C Power Delivery support
 - **`image-builder`** — Generates SD-card images with everything preinstalled
 
@@ -296,9 +297,59 @@ For a full list of development and debug targets:
 make help
 ```
 
-### SQ66 temporary deploy (dev/debug)
+### Temporary deploy (fast dev/debug loop)
+
+Use temp wheel deploy for quick iteration; it avoids rebuilding/installing full Debian packages.
 
 ```bash
-make sq66-deploy-temp HOST="$SQ66_RPI_HOST"
-make sq66-verify-temp HOST="$SQ66_RPI_HOST"
+make deploy-temp HOST="$SAT1_HOST"
+make verify-temp HOST="$SAT1_HOST" BOARD=sq66
 ```
+
+SQ66 aliases are still available:
+
+```bash
+make sq66-deploy-temp HOST="$SQ66_HOST"
+make sq66-verify-temp HOST="$SQ66_HOST"
+```
+
+### Debian package deploy (system install path)
+
+Use this when validating apt-managed installs and postinst behavior:
+
+```bash
+make deploy-deb HOST="$SAT1_HOST"
+make deploy-xmos-firmware-deb HOST="$SAT1_HOST"
+```
+
+### XMOS firmware from GitHub release
+
+Firmware release source:
+- repo: `FutureProofHomes/Satellite1-XMOS`
+- asset zip: `satellite_firmware_apps.zip`
+- firmware in zip: `satellite1_firmware_fixed_delay.factory.bin`
+- md5 in zip: `satellite1_firmware_fixed_delay.factory.md5`
+
+Fetch/build/deploy by release tag:
+
+```bash
+make xmos-firmware-fetch XMOS_FW_VERSION=v1.0.3
+make xmos-firmware-deb-from-gh XMOS_FW_VERSION=v1.0.3
+make deploy-xmos-firmware-deb-from-gh HOST="$SAT1_HOST" XMOS_FW_VERSION=v1.0.3
+```
+
+Package versions are normalized for Debian by stripping a leading `v` from `XMOS_FW_VERSION`.
+
+After installing firmware package, flash explicitly:
+
+```bash
+sudo sat1 xmos flash-firmware /usr/share/satellite1/firmware/xmos/current.bin --verify
+```
+
+### `.env` defaults for deploy workflows
+
+You can set host and firmware defaults in a local `.env` file (see `.env.example`).
+
+Common keys:
+- `SAT1_HOST`, `SQ66_HOST`
+- `XMOS_FW_REPO`, `XMOS_FW_ASSET`, `XMOS_FW_BIN`, `XMOS_FW_MD5`, `XMOS_FW_OUT_DIR`
