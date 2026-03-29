@@ -11,6 +11,7 @@ Deploy and run the current local `Satellite1-RPi` state on a target Pi without t
 - Use Make targets from repository root for deployment orchestration.
 - Use wheel-based deployment; do not sync source trees with rsync in this workflow.
 - Do not delete remote temp files or temp venv after test runs unless explicitly requested.
+- For Debian deploy flows, if the local `make deb` step fails, stop immediately; do not attempt remote copy or install.
 
 ## Persistent paths
 
@@ -33,6 +34,10 @@ Remote paths on Pi:
 Optional direct script usage:
 - `./scripts/deploy_temp_sdk.sh --host "${SQ66_RPI_HOST}"`
 - `./scripts/deploy_temp_verify.sh --host "${SQ66_RPI_HOST}" --board sq66`
+
+Optional Debian package deployment:
+- `make deploy-deb HOST="${SQ66_RPI_HOST}"`
+- If `make deb` fails during this flow, return the build failure and do not continue to remote install.
 
 ## Exit code mapping
 - `0`: success
