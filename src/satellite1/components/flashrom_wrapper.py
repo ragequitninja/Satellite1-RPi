@@ -228,9 +228,10 @@ class Flashrom:
         self, image: Path | str, *, verify: bool = True, chip: str | None = None
     ) -> None:
         image = Path(image)
-        cp = self._run(
-            ["-w", str(image)] + (["-v"] if verify else []), chip_override=chip
-        )
+        args = ["-w", str(image)]
+        if not verify:
+            args.append("-n")
+        cp = self._run(args, chip_override=chip)
         if cp.returncode != 0:
             raise FlashromError(
                 "flashrom write failed",
