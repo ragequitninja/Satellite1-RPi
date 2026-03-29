@@ -1,5 +1,7 @@
+---
 name: triage-test-failures
 description: Classify failing tests and propose minimal fix sequence.
+---
 
 ## Goal
 Turn raw test output into actionable steps.

@@ -1,5 +1,7 @@
+---
 name: device-control-handoff-apply
 description: Apply XMOS device-control handoff files by routing implementation to the device-control-handoff-updater subagent.
+---
 
 ## Goal
 Turn an XMOS protocol handoff into concrete SDK code/test updates in this repository.

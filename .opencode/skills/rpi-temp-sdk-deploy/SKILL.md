@@ -1,5 +1,7 @@
+---
 name: rpi-temp-sdk-deploy
 description: Build a wheel from current repo state and install it into a reusable temporary venv on a target Raspberry Pi.
+---
 
 ## Goal
 Deploy and run the current local `Satellite1-RPi` state on a target Pi without touching system installs.
@@ -23,20 +25,27 @@ Remote paths on Pi:
 - Temp venv: `/home/pi/.cache/venvs/satellite1-rpi-e2e`
 
 ## Required local environment
-- `SQ66_RPI_HOST` must be set.
+- Either `HOST` is provided on command line, or `.env` contains host defaults:
+  - `SAT1_HOST` for generic deploy targets
+  - `SQ66_HOST` for SQ66 alias targets
 
 ## Commands
 1. Deploy wheel and install into remote temp venv:
-   `make sq66-deploy-temp HOST="${SQ66_RPI_HOST}"`
+   `make deploy-temp HOST="${SAT1_HOST}"`
 2. Verify CLI and board-level command path:
-   `make sq66-verify-temp HOST="${SQ66_RPI_HOST}"`
+   `make verify-temp HOST="${SAT1_HOST}" BOARD=sq66`
+
+SQ66 aliases (equivalent):
+- `make sq66-deploy-temp HOST="${SQ66_HOST}"`
+- `make sq66-verify-temp HOST="${SQ66_HOST}"`
 
 Optional direct script usage:
-- `./scripts/deploy_temp_sdk.sh --host "${SQ66_RPI_HOST}"`
-- `./scripts/deploy_temp_verify.sh --host "${SQ66_RPI_HOST}" --board sq66`
+- `./scripts/deploy_temp_sdk.sh --host "${SAT1_HOST}"`
+- `./scripts/deploy_temp_verify.sh --host "${SAT1_HOST}" --board sq66`
 
 Optional Debian package deployment:
-- `make deploy-deb HOST="${SQ66_RPI_HOST}"`
+- `make deploy-deb HOST="${SAT1_HOST}"`
+- Generic deploy helper script: `./scripts/deploy_deb_package.sh`
 - If `make deb` fails during this flow, return the build failure and do not continue to remote install.
 
 ## Exit code mapping
@@ -82,7 +91,7 @@ Set executable bit:
 
 Example:
 
-`make sq66-verify-temp HOST="${SQ66_RPI_HOST}"`
+`make verify-temp HOST="${SAT1_HOST}" BOARD=sq66`
 
 ## Notes
 - This workflow is for temporary validation only.

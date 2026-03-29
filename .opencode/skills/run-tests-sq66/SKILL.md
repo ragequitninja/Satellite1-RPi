@@ -1,5 +1,7 @@
+---
 name: run-tests-sq66
 description: Run SQ66-related tests through Make targets with board-aware focus.
+---
 
 ## Goal
 Validate SQ66 integration paths quickly without running unrelated suites.

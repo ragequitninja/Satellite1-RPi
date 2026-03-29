@@ -1,5 +1,7 @@
+---
 name: run-tests
 description: Run project tests through Make targets with reproducible local setup.
+---
 
 ## Goal
 Run test targets reliably from the repository root and return concise results.
