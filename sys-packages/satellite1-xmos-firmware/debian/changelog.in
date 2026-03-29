@@ -1,0 +1,5 @@
+@PACKAGE_NAME@ (@VERSION@) bookworm; urgency=medium
+
+  * Package XMOS firmware payload artifacts.
+
+ -- Mischa Siekmann <mischa.siekmann@futureproofhomes.net>  @DATE_R@

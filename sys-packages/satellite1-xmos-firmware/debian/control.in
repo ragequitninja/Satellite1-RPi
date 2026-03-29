@@ -1,0 +1,21 @@
+Source: @PACKAGE_NAME@
+Section: misc
+Priority: optional
+Maintainer: Mischa <mischa.siekmann@futureproofhomes.net>
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Build-Depends:
+  debhelper-compat (= 13)
+Homepage: https://github.com/futureproofhomes/Satellite1-RPi
+
+Package: @PACKAGE_NAME@
+Architecture: @ARCH@
+Depends:
+  ${misc:Depends}
+Recommends:
+  satellite1-rpi-sdk,
+  flashrom
+Description: XMOS firmware payload for Satellite1 devices
+ Installs XMOS firmware artifacts and metadata under
+ /usr/share/satellite1/firmware/xmos. This package does not automatically
+ flash firmware during apt install.

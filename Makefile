@@ -31,6 +31,12 @@ MYPY          ?= $(LOCAL_VENV)/bin/mypy
 PRECOMMIT     ?= $(LOCAL_VENV)/bin/pre-commit
 DURATION      ?= 1
 BOARD         ?= sq66
+XMOS_FW_VERSION ?=
+XMOS_FW_REPO ?=
+XMOS_FW_ASSET ?=
+XMOS_FW_BIN ?=
+XMOS_FW_MD5 ?=
+XMOS_FW_OUT_DIR ?=
 
 # --- Metadata ---
 PYPROJ_VERSION := $(shell $(PYTHON) -m setuptools_scm 2>/dev/null || echo unknown)
@@ -59,7 +65,7 @@ print-meta:
 	@echo "GIT_NAME=$(GIT_NAME)"
 	@echo "GIT_EMAIL=$(GIT_EMAIL)"
 
-.PHONY: all shell deb docker-image clean help venv dev-install test test-file test-k lint typecheck precommit check sq66-test deploy-temp verify-temp deploy-deb sq66-deploy-temp sq66-deploy-deb sq66-verify-temp hil-audio prep-deb-tree
+.PHONY: all shell deb docker-image clean help venv dev-install test test-file test-k lint typecheck precommit check sq66-test deploy-temp verify-temp deploy-deb deploy-xmos-firmware-deb xmos-firmware-fetch xmos-firmware-deb-from-gh deploy-xmos-firmware-deb-from-gh sq66-deploy-temp sq66-deploy-deb sq66-verify-temp hil-audio prep-deb-tree
 
 help:
 	@echo "General targets (device-agnostic):"
@@ -76,8 +82,13 @@ help:
 	@echo "  make deploy-temp [HOST=user@ip]        Dev/debug temp wheel deploy to Pi"
 	@echo "  make verify-temp [HOST=user@ip]        Verify temp deploy on Pi (set BOARD=...)"
 	@echo "  make deploy-deb [HOST=user@ip]         Build .deb and install on Pi over SSH"
+	@echo "  make deploy-xmos-firmware-deb [HOST=user@ip]  Build XMOS firmware .deb and install"
+	@echo "  make xmos-firmware-fetch XMOS_FW_VERSION=vX.Y.Z    Download and verify XMOS firmware zip"
+	@echo "  make xmos-firmware-deb-from-gh XMOS_FW_VERSION=vX.Y.Z   Download firmware and build .deb"
+	@echo "  make deploy-xmos-firmware-deb-from-gh HOST=user@ip XMOS_FW_VERSION=vX.Y.Z"
 	@echo "  make hil-audio [DURATION=1]            Run on-device ALSA capture HIL checks"
 	@echo "  note: HOST defaults from .env via SAT1_HOST"
+	@echo "  note: XMOS firmware defaults can come from .env (XMOS_FW_REPO, XMOS_FW_ASSET, XMOS_FW_BIN, XMOS_FW_MD5, XMOS_FW_OUT_DIR)"
 	@echo
 	@echo "SQ66 targets:"
 	@echo "  make sq66-test                         Run SQ66-focused pytest selection"
@@ -198,13 +209,43 @@ sq66-deploy-temp:
 
 deploy-deb:
 	@test -n "$(HOST)" || { echo "Usage: make deploy-deb HOST=user@ip [DEB=path/to/package.deb] [SKIP_BUILD=1]"; exit 10; }
-	@./scripts/deploy_deb_sdk.sh --host "$(HOST)" $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+	@./scripts/deploy_deb_package.sh --host "$(HOST)" --package satellite1-rpi-sdk --make-target deb --deb-glob 'satellite1-rpi-sdk_*.deb' $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+
+
+deploy-xmos-firmware-deb:
+	@test -n "$(HOST)" || { echo "Usage: make deploy-xmos-firmware-deb HOST=user@ip [DEB=path/to/package.deb] [SKIP_BUILD=1]"; exit 10; }
+	@./scripts/deploy_deb_package.sh --host "$(HOST)" --package satellite1-xmos-firmware --make-target xmos-firmware-deb --deb-glob 'satellite1-xmos-firmware_*.deb' $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+
+
+xmos-firmware-fetch:
+	@test -n "$(XMOS_FW_VERSION)" || { echo "Usage: make xmos-firmware-fetch XMOS_FW_VERSION=vX.Y.Z"; exit 10; }
+	@FETCH_RESULT="$$(./scripts/fetch_xmos_firmware.sh --version "$(XMOS_FW_VERSION)" $(if $(XMOS_FW_REPO),--repo "$(XMOS_FW_REPO)") $(if $(XMOS_FW_ASSET),--asset "$(XMOS_FW_ASSET)") $(if $(XMOS_FW_BIN),--firmware-bin "$(XMOS_FW_BIN)") $(if $(XMOS_FW_MD5),--md5-file "$(XMOS_FW_MD5)") $(if $(XMOS_FW_OUT_DIR),--out-dir "$(XMOS_FW_OUT_DIR)"))" && \
+	  echo "Fetched firmware: $${FETCH_RESULT%%|*}" && \
+	  echo "Normalized version: $${FETCH_RESULT##*|}"
+
+
+xmos-firmware-deb-from-gh:
+	@test -n "$(XMOS_FW_VERSION)" || { echo "Usage: make xmos-firmware-deb-from-gh XMOS_FW_VERSION=vX.Y.Z"; exit 10; }
+	@FETCH_RESULT="$$(./scripts/fetch_xmos_firmware.sh --version "$(XMOS_FW_VERSION)" $(if $(XMOS_FW_REPO),--repo "$(XMOS_FW_REPO)") $(if $(XMOS_FW_ASSET),--asset "$(XMOS_FW_ASSET)") $(if $(XMOS_FW_BIN),--firmware-bin "$(XMOS_FW_BIN)") $(if $(XMOS_FW_MD5),--md5-file "$(XMOS_FW_MD5)") $(if $(XMOS_FW_OUT_DIR),--out-dir "$(XMOS_FW_OUT_DIR)"))" && \
+	  FW_BIN="$${FETCH_RESULT%%|*}" && \
+	  FW_VER="$${FETCH_RESULT##*|}" && \
+	  $(MAKE) xmos-firmware-deb FIRMWARE_BIN="$$FW_BIN" FIRMWARE_VERSION="$$FW_VER" OUT_DIR="$(OUT_DIR)"
+
+
+deploy-xmos-firmware-deb-from-gh:
+	@test -n "$(HOST)" || { echo "Usage: make deploy-xmos-firmware-deb-from-gh HOST=user@ip XMOS_FW_VERSION=vX.Y.Z"; exit 10; }
+	@test -n "$(XMOS_FW_VERSION)" || { echo "Usage: make deploy-xmos-firmware-deb-from-gh HOST=user@ip XMOS_FW_VERSION=vX.Y.Z"; exit 10; }
+	@FETCH_RESULT="$$(./scripts/fetch_xmos_firmware.sh --version "$(XMOS_FW_VERSION)" $(if $(XMOS_FW_REPO),--repo "$(XMOS_FW_REPO)") $(if $(XMOS_FW_ASSET),--asset "$(XMOS_FW_ASSET)") $(if $(XMOS_FW_BIN),--firmware-bin "$(XMOS_FW_BIN)") $(if $(XMOS_FW_MD5),--md5-file "$(XMOS_FW_MD5)") $(if $(XMOS_FW_OUT_DIR),--out-dir "$(XMOS_FW_OUT_DIR)"))" && \
+	  FW_BIN="$${FETCH_RESULT%%|*}" && \
+	  FW_VER="$${FETCH_RESULT##*|}" && \
+	  $(MAKE) xmos-firmware-deb FIRMWARE_BIN="$$FW_BIN" FIRMWARE_VERSION="$$FW_VER" OUT_DIR="$(OUT_DIR)" && \
+	  $(MAKE) deploy-xmos-firmware-deb HOST="$(HOST)" SKIP_BUILD=1
 
 
 sq66-deploy-deb:
 	@SQ66_HOST_VALUE="$(or $(HOST),$(SQ66_HOST),$(SAT1_HOST))"; \
 	  test -n "$$SQ66_HOST_VALUE" || { echo "Usage: make sq66-deploy-deb HOST=user@ip [DEB=path/to/package.deb] [SKIP_BUILD=1] (or set SQ66_HOST/SAT1_HOST in .env)"; exit 10; }; \
-	  ./scripts/deploy_deb_sdk.sh --host "$$SQ66_HOST_VALUE" $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+	  ./scripts/deploy_deb_package.sh --host "$$SQ66_HOST_VALUE" --package satellite1-rpi-sdk --make-target deb --deb-glob 'satellite1-rpi-sdk_*.deb' $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
 
 
 verify-temp:
@@ -229,6 +270,10 @@ kernel-pkg: $(OUR_DIR)
 .PHONY: rpi-setup-deb
 rpi-setup-deb: $(OUT_DIR)
 	$(MAKE) -C ./sys-packages/satellite1-rpi-setup deb OUT_DIR="$(OUT_DIR)"
+
+.PHONY: xmos-firmware-deb
+xmos-firmware-deb: $(OUT_DIR)
+	$(MAKE) -C ./sys-packages/satellite1-xmos-firmware deb OUT_DIR="$(OUT_DIR)"
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(DEB_TARGET)"

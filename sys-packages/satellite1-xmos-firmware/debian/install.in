@@ -1,0 +1,3 @@
+firmware/@FW_BASENAME@ usr/share/satellite1/firmware/xmos/
+firmware/@FW_MANIFEST@ usr/share/satellite1/firmware/xmos/
+firmware/@FW_SHA256@ usr/share/satellite1/firmware/xmos/

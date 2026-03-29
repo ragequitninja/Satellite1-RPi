@@ -1,0 +1,5 @@
+satellite1-xmos-firmware (0.0.0) bookworm; urgency=medium
+
+  * Initial package scaffold for XMOS firmware payload delivery.
+
+ -- Mischa Siekmann <mischa.siekmann@futureproofhomes.net>  Sun, 29 Mar 2026 16:15:00 +0000

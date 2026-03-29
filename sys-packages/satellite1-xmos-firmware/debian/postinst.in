@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+FW_DIR=/usr/share/satellite1/firmware/xmos
+FW_BIN=@FW_BASENAME@
+FW_MANIFEST=@FW_MANIFEST@
+FW_SHA256=@FW_SHA256@
+
+case "$1" in
+  configure|triggered)
+    if [ ! -f "${FW_DIR}/${FW_BIN}" ]; then
+      echo "postinst: ERROR: missing firmware file ${FW_DIR}/${FW_BIN}" >&2
+      exit 1
+    fi
+
+    if [ -x /usr/bin/sha256sum ] && [ -f "${FW_DIR}/${FW_SHA256}" ]; then
+      (cd "${FW_DIR}" && sha256sum -c "${FW_SHA256}")
+    fi
+
+    ln -sfn "${FW_BIN}" "${FW_DIR}/current.bin"
+    ln -sfn "${FW_MANIFEST}" "${FW_DIR}/current.json"
+
+    echo "satellite1-xmos-firmware: installed firmware payload only (no auto-flash)."
+    echo "satellite1-xmos-firmware: flash explicitly via sat1 xmos flash-firmware ${FW_DIR}/current.bin"
+    ;;
+esac
+
+exit 0
