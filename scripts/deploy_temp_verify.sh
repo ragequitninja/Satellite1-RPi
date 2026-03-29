@@ -7,9 +7,9 @@ EXIT_TRANSFER=30
 EXIT_VERIFY=50
 EXIT_RUNTIME=60
 
-REMOTE_ROOT="/home/pi/.cache/satellite1-rpi-e2e"
-REMOTE_VENV="/home/pi/.cache/venvs/satellite1-rpi-e2e"
-REMOTE_CONFIG="${REMOTE_ROOT}/satellite1.conf"
+REMOTE_ROOT="${REMOTE_ROOT:-/home/pi/.cache/satellite1-rpi-e2e}"
+REMOTE_VENV="${REMOTE_VENV:-/home/pi/.cache/venvs/satellite1-rpi-e2e}"
+REMOTE_CONFIG="${REMOTE_CONFIG:-${REMOTE_ROOT}/satellite1.conf}"
 
 HOST=""
 BOARD="sq66"
@@ -20,6 +20,11 @@ usage() {
 Usage: deploy_temp_verify.sh --host user@ip [--board sq66] [--run-dac-setup]
 
 Dev/debug verification for temporary deployment.
+
+Optional environment overrides:
+  REMOTE_ROOT
+  REMOTE_VENV
+  REMOTE_CONFIG
 EOF
 }
 

@@ -14,7 +14,7 @@ RUN dpkg --add-architecture arm64 && apt-get update && \
       # packaging stack
       devscripts debhelper dh-python dpkg-dev fakeroot \
       git-buildpackage \
-      python3.11 python3.11-venv python3-pip python3-build \
+      python3.11 python3.11-dev python3.11-venv python3-pip python3-build \
       python3-installer python3-setuptools python3-wheel \
       vim \
       # dtc for building .dtbo from .dts

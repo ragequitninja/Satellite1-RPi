@@ -8,9 +8,9 @@ EXIT_TRANSFER=30
 EXIT_REMOTE_INSTALL=40
 EXIT_VERIFY=50
 
-REMOTE_ROOT="/home/pi/.cache/satellite1-rpi-e2e"
-REMOTE_WHEEL_DIR="${REMOTE_ROOT}/wheels"
-REMOTE_VENV="/home/pi/.cache/venvs/satellite1-rpi-e2e"
+REMOTE_ROOT="${REMOTE_ROOT:-/home/pi/.cache/satellite1-rpi-e2e}"
+REMOTE_WHEEL_DIR="${REMOTE_WHEEL_DIR:-${REMOTE_ROOT}/wheels}"
+REMOTE_VENV="${REMOTE_VENV:-/home/pi/.cache/venvs/satellite1-rpi-e2e}"
 
 HOST=""
 WHEEL=""
@@ -21,6 +21,11 @@ usage() {
 Usage: deploy_temp_sdk.sh --host user@ip [--wheel path.whl] [--skip-build]
 
 Dev/debug only temporary deployment to Raspberry Pi cache paths.
+
+Optional environment overrides:
+  REMOTE_ROOT
+  REMOTE_WHEEL_DIR
+  REMOTE_VENV
 EOF
 }
 

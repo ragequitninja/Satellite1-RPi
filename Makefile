@@ -2,6 +2,12 @@ PACKAGE_NAME  ?= satellite1-rpi-sdk
 SDK_VERSION   ?= 1.0
 ARCH          ?= arm64
 
+ifneq (,$(wildcard .env))
+include .env
+endif
+
+HOST ?= $(SAT1_HOST)
+
 DOCKER        ?= docker
 PLATFORM      ?= linux/arm64
 DOCKER_MAKE   ?= docker/Makefile
@@ -24,6 +30,7 @@ RUFF          ?= $(LOCAL_VENV)/bin/ruff
 MYPY          ?= $(LOCAL_VENV)/bin/mypy
 PRECOMMIT     ?= $(LOCAL_VENV)/bin/pre-commit
 DURATION      ?= 1
+BOARD         ?= sq66
 
 # --- Metadata ---
 PYPROJ_VERSION := $(shell $(PYTHON) -m setuptools_scm 2>/dev/null || echo unknown)
@@ -52,10 +59,10 @@ print-meta:
 	@echo "GIT_NAME=$(GIT_NAME)"
 	@echo "GIT_EMAIL=$(GIT_EMAIL)"
 
-.PHONY: all shell deb docker-image clean help venv dev-install test test-file test-k lint typecheck precommit check sq66-test sq66-deploy-temp sq66-verify-temp hil-audio
+.PHONY: all shell deb docker-image clean help venv dev-install test test-file test-k lint typecheck precommit check sq66-test deploy-temp verify-temp deploy-deb sq66-deploy-temp sq66-deploy-deb sq66-verify-temp hil-audio prep-deb-tree
 
 help:
-	@echo "Common targets:"
+	@echo "General targets (device-agnostic):"
 	@echo "  make build [ALLOW_DIRTY=1]            Build wheel artifacts into build-assets/"
 	@echo "  make venv                              Create local development venv"
 	@echo "  make dev-install                       Install package with dev extras into .venv"
@@ -66,10 +73,18 @@ help:
 	@echo "  make typecheck                         Run mypy for src/"
 	@echo "  make precommit                         Run pre-commit hooks on all files"
 	@echo "  make check                             Run lint + typecheck + test"
-	@echo "  make sq66-test                         Run SQ66-focused pytest selection"
-	@echo "  make sq66-deploy-temp HOST=user@ip     Dev/debug temp wheel deploy to Pi"
-	@echo "  make sq66-verify-temp HOST=user@ip     Verify temp deploy on Pi"
+	@echo "  make deploy-temp [HOST=user@ip]        Dev/debug temp wheel deploy to Pi"
+	@echo "  make verify-temp [HOST=user@ip]        Verify temp deploy on Pi (set BOARD=...)"
+	@echo "  make deploy-deb [HOST=user@ip]         Build .deb and install on Pi over SSH"
 	@echo "  make hil-audio [DURATION=1]            Run on-device ALSA capture HIL checks"
+	@echo "  note: HOST defaults from .env via SAT1_HOST"
+	@echo
+	@echo "SQ66 targets:"
+	@echo "  make sq66-test                         Run SQ66-focused pytest selection"
+	@echo "  make sq66-deploy-temp [HOST=user@ip]   Alias of deploy-temp"
+	@echo "  make sq66-verify-temp [HOST=user@ip]   Verify temp deploy on Pi with BOARD=sq66"
+	@echo "  make sq66-deploy-deb [HOST=user@ip]    Alias of deploy-deb"
+	@echo "  note: sq66 targets fall back to SQ66_HOST, then SAT1_HOST"
 
 all: $(DEB_TARGET) build
 
@@ -91,7 +106,7 @@ $(OUT_DIR):
 	echo "*" > "$(OUT_DIR)/.gitignore"
 
 # build the wheel file and wrap it into a .deb package
-$(DEB_TARGET): docker-image verify-git-is-clean $(DEBIAN_DIR) | $(OUT_DIR)
+$(DEB_TARGET): docker-image verify-git-is-clean prep-deb-tree | $(OUT_DIR)
 	mkdir -p "$(OUT_DIR)"
 	$(DOCKER) run --rm --platform=$(PLATFORM) \
 	  -v "$(BUILD_DIR)":/work/src \
@@ -105,12 +120,17 @@ $(DEB_TARGET): docker-image verify-git-is-clean $(DEBIAN_DIR) | $(OUT_DIR)
 	@echo
 	@echo "Built package: $(DEB_TARGET)"
 
-$(DEBIAN_DIR):
+prep-deb-tree: | $(BUILD_DIR)
+	rm -rf "$(DEBIAN_DIR)" "$(BUILD_DIR)/etc"
+	cp -r "debian" "$(BUILD_DIR)"
+	cp -r "etc" "$(BUILD_DIR)"
+
+$(BUILD_DIR):
 	@echo "Creating $(BUILD_DIR)"
 	mkdir -p "$(BUILD_DIR)"
 	echo "*" > "$(BUILD_DIR)/.gitignore"
-	cp -r "debian" "$(BUILD_DIR)"
-	cp -r "etc" "$(BUILD_DIR)"
+
+
 
 
 
@@ -165,14 +185,37 @@ sq66-test: dev-install
 	@$(PYTEST) -k "sq66 or board_selection or cli_dac" -q
 
 
+deploy-temp:
+	@test -n "$(HOST)" || { echo "Usage: make deploy-temp HOST=user@ip [WHEEL=path/to/package.whl] [SKIP_BUILD=1]"; exit 10; }
+	@./scripts/deploy_temp_sdk.sh --host "$(HOST)" $(if $(WHEEL),--wheel "$(WHEEL)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+
+
 sq66-deploy-temp:
-	@test -n "$(HOST)" || { echo "Usage: make sq66-deploy-temp HOST=user@ip"; exit 10; }
-	@./scripts/deploy_temp_sdk.sh --host "$(HOST)"
+	@SQ66_HOST_VALUE="$(or $(HOST),$(SQ66_HOST),$(SAT1_HOST))"; \
+	  test -n "$$SQ66_HOST_VALUE" || { echo "Usage: make sq66-deploy-temp HOST=user@ip [WHEEL=path/to/package.whl] [SKIP_BUILD=1] (or set SQ66_HOST/SAT1_HOST in .env)"; exit 10; }; \
+	  ./scripts/deploy_temp_sdk.sh --host "$$SQ66_HOST_VALUE" $(if $(WHEEL),--wheel "$(WHEEL)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+
+
+deploy-deb:
+	@test -n "$(HOST)" || { echo "Usage: make deploy-deb HOST=user@ip [DEB=path/to/package.deb] [SKIP_BUILD=1]"; exit 10; }
+	@./scripts/deploy_deb_sdk.sh --host "$(HOST)" $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+
+
+sq66-deploy-deb:
+	@SQ66_HOST_VALUE="$(or $(HOST),$(SQ66_HOST),$(SAT1_HOST))"; \
+	  test -n "$$SQ66_HOST_VALUE" || { echo "Usage: make sq66-deploy-deb HOST=user@ip [DEB=path/to/package.deb] [SKIP_BUILD=1] (or set SQ66_HOST/SAT1_HOST in .env)"; exit 10; }; \
+	  ./scripts/deploy_deb_sdk.sh --host "$$SQ66_HOST_VALUE" $(if $(DEB),--deb "$(DEB)") $(if $(filter 1,$(SKIP_BUILD)),--skip-build)
+
+
+verify-temp:
+	@test -n "$(HOST)" || { echo "Usage: make verify-temp HOST=user@ip [BOARD=sq66] [RUN_DAC_SETUP=1]"; exit 10; }
+	@./scripts/deploy_temp_verify.sh --host "$(HOST)" --board "$(BOARD)" $(if $(filter 1,$(RUN_DAC_SETUP)),--run-dac-setup)
 
 
 sq66-verify-temp:
-	@test -n "$(HOST)" || { echo "Usage: make sq66-verify-temp HOST=user@ip"; exit 10; }
-	@./scripts/deploy_temp_verify.sh --host "$(HOST)" --board sq66
+	@SQ66_HOST_VALUE="$(or $(HOST),$(SQ66_HOST),$(SAT1_HOST))"; \
+	  test -n "$$SQ66_HOST_VALUE" || { echo "Usage: make sq66-verify-temp HOST=user@ip [RUN_DAC_SETUP=1] (or set SQ66_HOST/SAT1_HOST in .env)"; exit 10; }; \
+	  ./scripts/deploy_temp_verify.sh --host "$$SQ66_HOST_VALUE" --board sq66 $(if $(filter 1,$(RUN_DAC_SETUP)),--run-dac-setup)
 
 
 hil-audio:

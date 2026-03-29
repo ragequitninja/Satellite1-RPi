@@ -22,3 +22,6 @@ overlays/build/
 .DS_Store
 
 **/.venv
+
+# Local host defaults for deploy scripts
+.env
