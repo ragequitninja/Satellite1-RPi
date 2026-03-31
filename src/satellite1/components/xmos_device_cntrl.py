@@ -1,10 +1,14 @@
 import logging
+import os
 import struct
+import time
 from dataclasses import dataclass
 from time import sleep
 from typing import Self, Sequence
 
 from pydantic import BaseModel
+
+import fcntl
 
 try:
     import spidev
@@ -74,6 +78,9 @@ class AUDIO_PIPELINE_CONTROL:
     CMD_GET_SETTINGS = 0 | CntrlProto.CMD_READ_BIT
     CMD_SET_SETTINGS_PARTIAL = 1
     CMD_GET_AVAILABLE_MIC_COUNT = 2 | CntrlProto.CMD_READ_BIT
+    CMD_GET_DOA_RAW = 3 | CntrlProto.CMD_READ_BIT
+    CMD_GET_DOA_SMOOTH = 4 | CntrlProto.CMD_READ_BIT
+    CMD_GET_MIC_INPUT_DEBUG_STATS = 5 | CntrlProto.CMD_READ_BIT
 
     MIC_OUTPUT_I2S_CHANNEL_COUNT = 2
     MIC_OUTPUT_PACKED_CHANNEL_COUNT = 6
@@ -121,6 +128,19 @@ class MicInputSettings:
     mic_input_channel_map: tuple[int, int, int, int]
 
 
+@dataclass(frozen=True)
+class DoaReading:
+    doa_mrad: int
+    seq: int
+    valid: int
+
+
+@dataclass(frozen=True)
+class MicInputDebugStats:
+    frame_counter: int
+    mic_mean_abs: tuple[int, int, int, int]
+
+
 class SPI_ECHO_SERVICER:
     CMD_SET = DeviceCntrlCMD(37, 10, 128)
     CMD_GET = DeviceCntrlCMD(37, 11 | CntrlProto.CMD_READ_BIT, 128)
@@ -149,12 +169,17 @@ class XMOSDeviceCntrl:
 
         self._spi = None
         self.dc_status_register_ = bytearray(self.status_reg_len)
+        self._may_have_stale_payload = False
+        self._lock_fd: int | None = None
+        self._lock_path = os.getenv("SAT1_XMOS_SPI_LOCK", "/tmp/sat1_xmos_spi.lock")
+        self._lock_timeout_s = float(os.getenv("SAT1_XMOS_SPI_LOCK_TIMEOUT_S", "2.0"))
 
     def open(self) -> None:
         if self._spi is not None:
             return
         if spidev is None:  # pragma: no cover
             raise RuntimeError("spidev not available")
+        self._acquire_lock()
         spi = spidev.SpiDev()
         spi.open(self.spi_bus, self.spi_dev)  # e.g., /dev/spidev0.0
         spi.max_speed_hz = self.max_speed_hz
@@ -176,6 +201,7 @@ class XMOSDeviceCntrl:
             except Exception:
                 pass
             self._spi = None
+        self._release_lock()
 
     def __enter__(self):
         self.open()
@@ -183,6 +209,35 @@ class XMOSDeviceCntrl:
 
     def __exit__(self, *exc):
         self.close()
+
+    def _acquire_lock(self) -> None:
+        if self._lock_fd is not None:
+            return
+        lock_fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+        deadline = time.monotonic() + max(0.0, self._lock_timeout_s)
+        while True:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self._lock_fd = lock_fd
+                return
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    os.close(lock_fd)
+                    raise RuntimeError(f"SPI lock busy (path={self._lock_path})")
+                sleep(0.05)
+
+    def _release_lock(self) -> None:
+        if self._lock_fd is None:
+            return
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        try:
+            os.close(self._lock_fd)
+        except Exception:
+            pass
+        self._lock_fd = None
 
     def dump_config(self) -> dict:
         """Return a small config/status dict (for printing/logging)."""
@@ -263,6 +318,25 @@ class XMOSDeviceCntrl:
             mic_source_mode=mic_mode,
             ref_input_channel_map=(r0, r1),
             mic_input_channel_map=(m0, m1, m2, m3),
+        )
+
+    @staticmethod
+    def decode_doa_reading(data: bytes) -> DoaReading:
+        if len(data) != 8:
+            raise ValueError(f"expected 8 bytes for DoA reading, got {len(data)}")
+        doa_mrad, seq, valid, _reserved = struct.unpack("<iHBB", data)
+        return DoaReading(doa_mrad=doa_mrad, seq=seq, valid=valid)
+
+    @staticmethod
+    def decode_mic_input_debug_stats(data: bytes) -> MicInputDebugStats:
+        if len(data) != 20:
+            raise ValueError(
+                f"expected 20 bytes for mic input debug stats, got {len(data)}"
+            )
+        frame_counter, m0, m1, m2, m3 = struct.unpack("<IIIII", data)
+        return MicInputDebugStats(
+            frame_counter=frame_counter,
+            mic_mean_abs=(m0, m1, m2, m3),
         )
 
     @staticmethod
@@ -512,6 +586,39 @@ class XMOSDeviceCntrl:
             raise RuntimeError("Failed to read available mic count")
         return data[0]
 
+    def get_doa_raw(self) -> DoaReading:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_DOA_RAW,
+            None,
+            8,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read raw DoA")
+        return self.decode_doa_reading(data)
+
+    def get_doa_smooth(self) -> DoaReading:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_DOA_SMOOTH,
+            None,
+            8,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read smooth DoA")
+        return self.decode_doa_reading(data)
+
+    def get_mic_input_debug_stats(self) -> MicInputDebugStats:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_MIC_INPUT_DEBUG_STATS,
+            None,
+            20,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read mic input debug stats")
+        return self.decode_mic_input_debug_stats(data)
+
     def set_mic_input_settings_partial(
         self,
         *,
@@ -538,6 +645,19 @@ class XMOSDeviceCntrl:
         )
         return ok
 
+    def _drain_pending_read_payloads(self, read_payload_len: int) -> None:
+        """
+        Drain stale payload-available frames before issuing a fresh read command.
+
+        If a previous read transaction was interrupted, the next read can otherwise
+        consume an old payload frame and decode garbage.
+        """
+        drain_len = max(3, read_payload_len + 1)
+        for _ in range(3):
+            rx = self._xfer([0x00] * drain_len)
+            if not rx or rx[0] != CntrlProto.RET_PAYLOAD_AVAILABLE:
+                break
+
     def transfer(
         self,
         resource_id: int,
@@ -563,6 +683,9 @@ class XMOSDeviceCntrl:
             req_payload_len = (
                 read_payload_len + 1
             )  # request one more byte for the return status
+            if self._may_have_stale_payload:
+                self._drain_pending_read_payloads(read_payload_len)
+                self._may_have_stale_payload = False
         else:
             req_payload_len = write_payload_len
 
@@ -578,6 +701,9 @@ class XMOSDeviceCntrl:
         # Retry up to 3 times if device is busy
         for _ in range(5):
             rx = self._xfer(tx)
+            if len(rx) < 3:
+                log.debug("transfer: short header frame len=%d", len(rx))
+                return (False, None)
             # Not responding at all?
             if (rx[0] + rx[1] + rx[2]) == 0:
                 log.debug("transfer: no response (sum header == 0)")
@@ -612,13 +738,36 @@ class XMOSDeviceCntrl:
                     sleep(0.1)
                     continue
 
+                payload_available = rx2[0] == CntrlProto.RET_PAYLOAD_AVAILABLE
+                legacy_dfu_payload = (
+                    resource_id == DFU_SERVICER.CMD_GET_VERSION.resource_id
+                    and command == DFU_SERVICER.CMD_GET_VERSION.command_id
+                    and rx2[0] == 0x00
+                )
+                legacy_audio_payload = rx2[0] == 0x00 and resource_id in {
+                    AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_SETTINGS_RES_ID,
+                    AUDIO_PIPELINE_CONTROL.SPEAKER_SETTINGS_RES_ID,
+                    AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+                }
+                if not (
+                    payload_available or legacy_dfu_payload or legacy_audio_payload
+                ):
+                    sleep(0.05)
+                    continue
+
+                if len(rx2) < (1 + read_payload_len):
+                    sleep(0.05)
+                    continue
+
                 data = (
                     bytes(rx2[1 : 1 + read_payload_len])
                     if read_payload_len > 0
                     else b""
                 )
+                self._may_have_stale_payload = False
                 return (True, data)
 
+            self._may_have_stale_payload = True
             return (False, None)
 
         # WRITE completed

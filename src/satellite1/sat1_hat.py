@@ -11,6 +11,8 @@ except Exception:  # ImportError on macOS, etc.
 import logging
 
 from .components.xmos_device_cntrl import (
+    DoaReading,
+    MicInputDebugStats,
     DFU_SERVICER,
     MAIN_SERVICER,
     SPI_ECHO_SERVICER,
@@ -237,6 +239,15 @@ class XMOS:
 
     def get_available_mic_count(self) -> int:
         return self._cntrl.get_available_mic_count()
+
+    def get_doa_raw(self) -> DoaReading:
+        return self._cntrl.get_doa_raw()
+
+    def get_doa_smooth(self) -> DoaReading:
+        return self._cntrl.get_doa_smooth()
+
+    def get_mic_input_debug_stats(self) -> MicInputDebugStats:
+        return self._cntrl.get_mic_input_debug_stats()
 
     def set_mic_input_gains(
         self, mic_gain: int | None = None, ref_gain: int | None = None

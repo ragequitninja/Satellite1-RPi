@@ -138,6 +138,30 @@ def test_get_available_mic_count_forwards_to_control_layer():
     assert x.get_available_mic_count() == 4
 
 
+def test_get_doa_raw_forwards_to_control_layer():
+    x = XMOS()
+    expected = SimpleNamespace(doa_mrad=100, seq=7, valid=1)
+    x._cntrl = SimpleNamespace(get_doa_raw=lambda: expected)
+
+    assert x.get_doa_raw() is expected
+
+
+def test_get_doa_smooth_forwards_to_control_layer():
+    x = XMOS()
+    expected = SimpleNamespace(doa_mrad=90, seq=8, valid=1)
+    x._cntrl = SimpleNamespace(get_doa_smooth=lambda: expected)
+
+    assert x.get_doa_smooth() is expected
+
+
+def test_get_mic_input_debug_stats_forwards_to_control_layer():
+    x = XMOS()
+    expected = SimpleNamespace(frame_counter=7, mic_mean_abs=(1, 2, 3, 4))
+    x._cntrl = SimpleNamespace(get_mic_input_debug_stats=lambda: expected)
+
+    assert x.get_mic_input_debug_stats() is expected
+
+
 def test_poll_transitions_to_control_mode_when_firmware_is_read(monkeypatch):
     x = XMOS()
     x._connection_state = "DETACHED"

@@ -151,6 +151,117 @@ def test_read_command_second_phase_returns_payload():
     dev.close()
 
 
+def test_read_command_accepts_legacy_dfu_payload_prefix_zero():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+
+    payload = b"\x01\x00\x03\x04\x00"
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [0x00] + list(payload),
+    )
+
+    ok, data = dev.send_cmd(mod.DFU_SERVICER.CMD_GET_VERSION)
+    assert ok and data == payload
+    dev.close()
+
+
+def test_read_command_accepts_legacy_audio_payload_prefix_zero():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+
+    payload = bytes(range(1, 17))
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [0x00] + list(payload),
+    )
+
+    ok, data = dev.transfer(
+        mod.AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+        mod.AUDIO_PIPELINE_CONTROL.CMD_GET_SETTINGS,
+        None,
+        read_payload_len=len(payload),
+    )
+    assert ok and data == payload
+    dev.close()
+
+
+def test_read_command_ignores_non_payload_frames_until_payload_available():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    # Phase 1 accepted
+    dev._spi.queue([0x02, 0x00, 0x00])
+    # second phase starts with non-payload header, then valid payload frame
+    dev._spi.queue([0x01, 0x00, 0x11, 0x22, 0x33])
+    payload = b"\xaa\xbb\xcc\xdd\xee"
+    dev._spi.queue([mod.CntrlProto.RET_PAYLOAD_AVAILABLE] + list(payload))
+
+    ok, data = dev.transfer(
+        0xF0,
+        0x58 | mod.CntrlProto.CMD_READ_BIT,
+        None,
+        read_payload_len=len(payload),
+    )
+    assert ok and data == payload
+    dev.close()
+
+
+def test_read_command_drains_stale_payload_before_issuing_new_read():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+
+    stale = b"\x01\x02\x03\x04\x05"
+    fresh = b"\x11\x22\x33\x44\x55"
+
+    dev._may_have_stale_payload = True
+
+    # Drain pass sees stale pending payload.
+    dev._spi.queue([mod.CntrlProto.RET_PAYLOAD_AVAILABLE] + list(stale))
+    # Second drain probe sees no pending payload and stops draining.
+    dev._spi.queue([0x00, 0x00, 0x00])
+    # Phase 1 command accepted.
+    dev._spi.queue([0x02, 0x00, 0x00])
+    # Phase 2 returns fresh payload.
+    dev._spi.queue([mod.CntrlProto.RET_PAYLOAD_AVAILABLE] + list(fresh))
+
+    ok, data = dev.transfer(
+        0xF0,
+        0x58 | mod.CntrlProto.CMD_READ_BIT,
+        None,
+        read_payload_len=len(fresh),
+    )
+    assert ok and data == fresh
+    dev.close()
+
+
+def test_read_command_retries_when_payload_frame_too_short():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+
+    payload = b"\xaa\xbb\xcc\xdd\xee"
+
+    # Phase 1 accepted
+    dev._spi.queue([0x02, 0x00, 0x00])
+    # First phase-2 frame is payload-available but too short.
+    dev._spi.queue([mod.CntrlProto.RET_PAYLOAD_AVAILABLE, 0x99])
+    # Next frame is valid and should be used.
+    dev._spi.queue([mod.CntrlProto.RET_PAYLOAD_AVAILABLE] + list(payload))
+
+    ok, data = dev.transfer(
+        0xF0,
+        0x58 | mod.CntrlProto.CMD_READ_BIT,
+        None,
+        read_payload_len=len(payload),
+    )
+    assert ok and data == payload
+    dev.close()
+
+
 def test_command_struct_validation():
     mod, _ = load_module_with_stubbed_spidev()
     with pytest.raises(ValueError):
@@ -382,4 +493,80 @@ def test_get_available_mic_count_reads_single_byte_response():
     assert count == 4
     assert dev._spi.last_tx[0] == 0
     assert dev._spi.last_tx[1] == 0
+    dev.close()
+
+
+def test_decode_doa_reading_round_trip_shape():
+    mod, _ = load_module_with_stubbed_spidev()
+    reading = mod.XMOSDeviceCntrl.decode_doa_reading(
+        struct.pack("<iHBB", 1234, 9, 1, 0)
+    )
+    assert reading.doa_mrad == 1234
+    assert reading.seq == 9
+    assert reading.valid == 1
+
+
+def test_get_doa_raw_reads_resource_232_command_3():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE]
+        + list(struct.pack("<iHBB", 777, 3, 1, 0)),
+    )
+
+    reading = dev.get_doa_raw()
+
+    assert reading.doa_mrad == 777
+    assert reading.seq == 3
+    assert reading.valid == 1
+    assert dev._spi.last_tx[0] == 0
+    assert dev._spi.last_tx[1] == 0
+    dev.close()
+
+
+def test_get_doa_smooth_reads_resource_232_command_4():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE]
+        + list(struct.pack("<iHBB", -456, 11, 1, 0)),
+    )
+
+    reading = dev.get_doa_smooth()
+
+    assert reading.doa_mrad == -456
+    assert reading.seq == 11
+    assert reading.valid == 1
+    assert dev._spi.last_tx[0] == 0
+    assert dev._spi.last_tx[1] == 0
+    dev.close()
+
+
+def test_decode_mic_input_debug_stats_shape():
+    mod, _ = load_module_with_stubbed_spidev()
+    stats = mod.XMOSDeviceCntrl.decode_mic_input_debug_stats(
+        struct.pack("<IIIII", 123, 10, 20, 30, 40)
+    )
+    assert stats.frame_counter == 123
+    assert stats.mic_mean_abs == (10, 20, 30, 40)
+
+
+def test_get_mic_input_debug_stats_reads_resource_232_command_5():
+    mod, _ = load_module_with_stubbed_spidev()
+    dev = mod.XMOSDeviceCntrl()
+    dev.open()
+    dev._spi.queue(
+        [0x02, 0x00, 0x00],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE]
+        + list(struct.pack("<IIIII", 7, 1, 2, 3, 4)),
+    )
+
+    stats = dev.get_mic_input_debug_stats()
+
+    assert stats.frame_counter == 7
+    assert stats.mic_mean_abs == (1, 2, 3, 4)
     dev.close()
