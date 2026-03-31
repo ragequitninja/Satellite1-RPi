@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 from ..board import resolve_board
@@ -201,14 +202,20 @@ def _normalize_sample(val) -> str:
 
 
 def _collect_samples(getter, iterations: int, delay_s: float) -> list[str]:
-    import time
-
     samples: list[str] = []
     for idx in range(iterations):
         samples.append(_normalize_sample(getter()))
         if delay_s > 0 and idx < iterations - 1:
             time.sleep(delay_s)
     return samples
+
+
+def _doa_reading_to_dict(reading) -> dict:
+    return {
+        "doa_mrad": int(reading.doa_mrad),
+        "seq": int(reading.seq),
+        "valid": int(reading.valid),
+    }
 
 
 def _handle(args: argparse.Namespace) -> int:
@@ -428,6 +435,30 @@ def _handle(args: argparse.Namespace) -> int:
             print(xmos.get_doa_raw())
         return 0
 
+    if args.cmd == "doa" and args.doa_cmd == "stream":
+        if args.period_s <= 0:
+            raise SystemExit("--period-s must be > 0")
+        if args.count is not None and args.count <= 0:
+            raise SystemExit("--count must be > 0")
+
+        emitted = 0
+        try:
+            while args.count is None or emitted < args.count:
+                sample: dict = {}
+                if args.mode in ("raw", "both"):
+                    sample["raw"] = _doa_reading_to_dict(xmos.get_doa_raw())
+                if args.mode in ("smooth", "both"):
+                    sample["smooth"] = _doa_reading_to_dict(xmos.get_doa_smooth())
+
+                print(json.dumps(sample), flush=True)
+                emitted += 1
+
+                if args.count is None or emitted < args.count:
+                    time.sleep(args.period_s)
+        except KeyboardInterrupt:
+            return 130
+        return 0
+
     if args.cmd == "get-mic-input-debug-stats":
         print(xmos.get_mic_input_debug_stats())
         return 0
@@ -542,6 +573,28 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
         choices=["raw", "smooth"],
         default="raw",
         help="Select DoA signal mode (default: raw)",
+    )
+
+    doa_group = sp.add_parser("doa", help="DoA command group")
+    doa_sp = doa_group.add_subparsers(dest="doa_cmd", required=True)
+    doa_stream = doa_sp.add_parser("stream", help="Stream DoA readings as NDJSON")
+    doa_stream.add_argument(
+        "--period-s",
+        type=float,
+        default=0.1,
+        help="Sampling period in seconds (default: 0.1)",
+    )
+    doa_stream.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="Stop after this many samples (default: run forever)",
+    )
+    doa_stream.add_argument(
+        "--mode",
+        choices=["raw", "smooth", "both"],
+        default="both",
+        help="Select output mode (default: both)",
     )
 
     sp.add_parser(

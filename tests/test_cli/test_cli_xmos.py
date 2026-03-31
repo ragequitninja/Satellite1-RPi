@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -74,10 +75,28 @@ def stub_xmos(monkeypatch):
             return True
 
         def get_doa_raw(self):
-            return "DoaReading(doa_mrad=123, seq=7, valid=1)"
+            return type(
+                "DoaReading",
+                (),
+                {
+                    "doa_mrad": 123,
+                    "seq": 7,
+                    "valid": 1,
+                    "__str__": lambda _self: "DoaReading(doa_mrad=123, seq=7, valid=1)",
+                },
+            )()
 
         def get_doa_smooth(self):
-            return "DoaReading(doa_mrad=100, seq=8, valid=1)"
+            return type(
+                "DoaReading",
+                (),
+                {
+                    "doa_mrad": 100,
+                    "seq": 8,
+                    "valid": 1,
+                    "__str__": lambda _self: "DoaReading(doa_mrad=100, seq=8, valid=1)",
+                },
+            )()
 
         def get_mic_input_debug_stats(self):
             return "MicInputDebugStats(frame_counter=42, mic_mean_abs=(10, 20, 30, 40))"
@@ -451,6 +470,34 @@ def test_get_mic_input_debug_stats(capsys):
     rc, out = run(["get-mic-input-debug-stats"], capsys)
     assert rc == 0
     assert "frame_counter=42" in out
+
+
+def test_doa_stream_emits_ndjson_lines(capsys):
+    rc, out = run(["doa", "stream", "--period-s", "0.001", "--count", "3"], capsys)
+    assert rc == 0
+    lines = out.splitlines()
+    assert len(lines) == 3
+    for line in lines:
+        obj = json.loads(line)
+        assert obj["raw"]["doa_mrad"] == 123
+        assert obj["smooth"]["doa_mrad"] == 100
+
+
+def test_doa_stream_raw_mode(capsys):
+    rc, out = run(
+        ["doa", "stream", "--period-s", "0.001", "--count", "1", "--mode", "raw"],
+        capsys,
+    )
+    assert rc == 0
+    obj = json.loads(out)
+    assert "raw" in obj
+    assert "smooth" not in obj
+
+
+def test_doa_stream_rejects_non_positive_count(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        run(["doa", "stream", "--count", "0"], capsys)
+    assert "--count must be > 0" in str(excinfo.value)
 
 
 def test_set_mic_output_returns_failure_code(capsys, monkeypatch):
