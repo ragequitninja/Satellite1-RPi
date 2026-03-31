@@ -218,6 +218,33 @@ def _doa_reading_to_dict(reading) -> dict:
     }
 
 
+def _stream_doa_samples(
+    xmos: XMOS, mode: str, period_s: float, count: int | None
+) -> int:
+    if period_s <= 0:
+        raise SystemExit("--period-s must be > 0")
+    if count is not None and count <= 0:
+        raise SystemExit("--count must be > 0")
+
+    emitted = 0
+    try:
+        while count is None or emitted < count:
+            sample: dict = {}
+            if mode in ("raw", "both"):
+                sample["raw"] = _doa_reading_to_dict(xmos.get_doa_raw())
+            if mode in ("smooth", "both"):
+                sample["smooth"] = _doa_reading_to_dict(xmos.get_doa_smooth())
+
+            print(json.dumps(sample), flush=True)
+            emitted += 1
+
+            if count is None or emitted < count:
+                time.sleep(period_s)
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
 def _handle(args: argparse.Namespace) -> int:
     """Dispatch XMOS subcommands."""
     board = resolve_board(getattr(args, "board", None), getattr(args, "config", None))
@@ -429,34 +456,17 @@ def _handle(args: argparse.Namespace) -> int:
         return 0
 
     if args.cmd == "get-doa":
+        if args.stream:
+            return _stream_doa_samples(
+                xmos,
+                mode=args.mode,
+                period_s=args.period_s,
+                count=args.count,
+            )
         if args.mode == "smooth":
             print(xmos.get_doa_smooth())
         else:
             print(xmos.get_doa_raw())
-        return 0
-
-    if args.cmd == "doa" and args.doa_cmd == "stream":
-        if args.period_s <= 0:
-            raise SystemExit("--period-s must be > 0")
-        if args.count is not None and args.count <= 0:
-            raise SystemExit("--count must be > 0")
-
-        emitted = 0
-        try:
-            while args.count is None or emitted < args.count:
-                sample: dict = {}
-                if args.mode in ("raw", "both"):
-                    sample["raw"] = _doa_reading_to_dict(xmos.get_doa_raw())
-                if args.mode in ("smooth", "both"):
-                    sample["smooth"] = _doa_reading_to_dict(xmos.get_doa_smooth())
-
-                print(json.dumps(sample), flush=True)
-                emitted += 1
-
-                if args.count is None or emitted < args.count:
-                    time.sleep(args.period_s)
-        except KeyboardInterrupt:
-            return 130
         return 0
 
     if args.cmd == "get-mic-input-debug-stats":
@@ -574,27 +584,22 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
         default="raw",
         help="Select DoA signal mode (default: raw)",
     )
-
-    doa_group = sp.add_parser("doa", help="DoA command group")
-    doa_sp = doa_group.add_subparsers(dest="doa_cmd", required=True)
-    doa_stream = doa_sp.add_parser("stream", help="Stream DoA readings as NDJSON")
-    doa_stream.add_argument(
+    doa.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream DoA as NDJSON instead of single sample",
+    )
+    doa.add_argument(
         "--period-s",
         type=float,
         default=0.1,
-        help="Sampling period in seconds (default: 0.1)",
+        help="Sampling period in seconds when --stream is set (default: 0.1)",
     )
-    doa_stream.add_argument(
+    doa.add_argument(
         "--count",
         type=int,
         default=None,
-        help="Stop after this many samples (default: run forever)",
-    )
-    doa_stream.add_argument(
-        "--mode",
-        choices=["raw", "smooth", "both"],
-        default="both",
-        help="Select output mode (default: both)",
+        help="Stop after this many samples when --stream is set",
     )
 
     sp.add_parser(

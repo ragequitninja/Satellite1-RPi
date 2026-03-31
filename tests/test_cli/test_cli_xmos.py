@@ -466,38 +466,28 @@ def test_get_doa_smooth_mode(capsys):
     assert "doa_mrad=100" in out
 
 
+def test_get_doa_stream_mode_emits_ndjson(capsys):
+    rc, out = run(
+        ["get-doa", "--stream", "--period-s", "0.001", "--count", "2"],
+        capsys,
+    )
+    assert rc == 0
+    lines = out.splitlines()
+    assert len(lines) == 2
+    first = json.loads(lines[0])
+    assert first["raw"]["doa_mrad"] == 123
+
+
+def test_get_doa_stream_rejects_non_positive_count(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        run(["get-doa", "--stream", "--count", "0"], capsys)
+    assert "--count must be > 0" in str(excinfo.value)
+
+
 def test_get_mic_input_debug_stats(capsys):
     rc, out = run(["get-mic-input-debug-stats"], capsys)
     assert rc == 0
     assert "frame_counter=42" in out
-
-
-def test_doa_stream_emits_ndjson_lines(capsys):
-    rc, out = run(["doa", "stream", "--period-s", "0.001", "--count", "3"], capsys)
-    assert rc == 0
-    lines = out.splitlines()
-    assert len(lines) == 3
-    for line in lines:
-        obj = json.loads(line)
-        assert obj["raw"]["doa_mrad"] == 123
-        assert obj["smooth"]["doa_mrad"] == 100
-
-
-def test_doa_stream_raw_mode(capsys):
-    rc, out = run(
-        ["doa", "stream", "--period-s", "0.001", "--count", "1", "--mode", "raw"],
-        capsys,
-    )
-    assert rc == 0
-    obj = json.loads(out)
-    assert "raw" in obj
-    assert "smooth" not in obj
-
-
-def test_doa_stream_rejects_non_positive_count(capsys):
-    with pytest.raises(SystemExit) as excinfo:
-        run(["doa", "stream", "--count", "0"], capsys)
-    assert "--count must be > 0" in str(excinfo.value)
 
 
 def test_set_mic_output_returns_failure_code(capsys, monkeypatch):

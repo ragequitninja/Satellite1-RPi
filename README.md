@@ -232,7 +232,7 @@ sat1 dac [options] {volume,set-volume,mute,unmute,setup,plugged-in,status}
 ## XMOS Controls
 
 ```bash
-sat1 xmos {setup,read-firmware,read-status,reset,enable-flashing,disable-flashing,run-spi-test,set-mic-output,get-mic-pipeline-settings,set-mic-pipeline-settings,get-doa,doa,flash-firmware}
+sat1 xmos {setup,read-firmware,read-status,reset,enable-flashing,disable-flashing,run-spi-test,set-mic-output,get-mic-pipeline-settings,set-mic-pipeline-settings,get-doa,flash-firmware}
 ```
 
 ### Commands
@@ -249,8 +249,7 @@ sat1 xmos {setup,read-firmware,read-status,reset,enable-flashing,disable-flashin
 | `set-mic-output` | Configure I²S microphone routing |
 | `get-mic-pipeline-settings` | Read available mic count and mic input/output pipeline settings |
 | `set-mic-pipeline-settings` | Apply partial mic input/output pipeline updates from JSON |
-| `get-doa` | Read one DoA sample (`raw` or `smooth`) |
-| `doa stream` | Stream DoA samples as line-delimited JSON |
+| `get-doa` | Read one DoA sample (`raw` or `smooth`), or stream with `--stream` |
 | `flash-firmware` | Flash XMOS firmware |
 
 ---
