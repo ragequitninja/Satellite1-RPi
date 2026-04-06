@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from time import sleep
 from typing import Self, Sequence
 
-from pydantic import BaseModel
-
 import fcntl
 
 try:
@@ -20,7 +18,8 @@ log = logging.getLogger("XMOSDeviceCntrl")
 MAX_SPI_TRANSFER_LEN = 256
 
 
-class DeviceCntrlConfig(BaseModel):
+@dataclass(frozen=True)
+class DeviceCntrlConfig:
     bus: int = 0
     dev: int = 0
     max_speed_hz: int = 1_000_000
@@ -81,6 +80,8 @@ class AUDIO_PIPELINE_CONTROL:
     CMD_GET_DOA_RAW = 3 | CntrlProto.CMD_READ_BIT
     CMD_GET_DOA_SMOOTH = 4 | CntrlProto.CMD_READ_BIT
     CMD_GET_MIC_INPUT_DEBUG_STATS = 5 | CntrlProto.CMD_READ_BIT
+    CMD_GET_MIC_INPUT_PACKAGED_SNAPSHOT = 6 | CntrlProto.CMD_READ_BIT
+    CMD_GET_SPK_INPUT_PACKAGED_SNAPSHOT = 7 | CntrlProto.CMD_READ_BIT
 
     MIC_OUTPUT_I2S_CHANNEL_COUNT = 2
     MIC_OUTPUT_PACKED_CHANNEL_COUNT = 6
@@ -88,6 +89,7 @@ class AUDIO_PIPELINE_CONTROL:
     MIC_OUTPUT_FIELD_PACK_ENABLE = 1 << 2
     MIC_OUTPUT_FIELD_I2S_CHANNEL_MAP = 1 << 3
     MIC_OUTPUT_FIELD_PACKED_CHANNEL_MAP = 1 << 4
+    MIC_OUTPUT_FIELD_OVERWRITE_REF_WITH_IC_NS_OUTPUT = 1 << 9
 
     SPEAKER_FIELD_EQ_ENABLED = 1 << 0
     SPEAKER_FIELD_EQ_PROFILE_ID = 1 << 1
@@ -110,6 +112,7 @@ class MicOutputSettings:
     pack_extra_upsample_channels: int
     i2s_channel_map: tuple[int, int]
     upsample_channel_map: tuple[int, int, int, int, int, int]
+    overwrite_ref_with_ic_ns_output: int
 
 
 @dataclass(frozen=True)
@@ -139,6 +142,18 @@ class DoaReading:
 class MicInputDebugStats:
     frame_counter: int
     mic_mean_abs: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class MicInputPackagedSnapshot:
+    magic: int
+    guard_a: int
+    guard_b: int
+    frame_counter: int
+    mic_input_channel_map: tuple[int, int, int, int]
+    sample_count: int
+    packaged_lane_samples: tuple[tuple[int, int, int, int], ...]
+    mapped_mic_samples: tuple[tuple[int, int, int, int], ...]
 
 
 class SPI_ECHO_SERVICER:
@@ -173,6 +188,13 @@ class XMOSDeviceCntrl:
         self._lock_fd: int | None = None
         self._lock_path = os.getenv("SAT1_XMOS_SPI_LOCK", "/tmp/sat1_xmos_spi.lock")
         self._lock_timeout_s = float(os.getenv("SAT1_XMOS_SPI_LOCK_TIMEOUT_S", "2.0"))
+        self._transfer_count = 0
+
+    @staticmethod
+    def _fmt_bytes(data: Sequence[int], limit: int = 12) -> str:
+        shown = list(data[:limit])
+        suffix = "" if len(data) <= limit else " ..."
+        return " ".join(f"{b:02x}" for b in shown) + suffix
 
     def open(self) -> None:
         if self._spi is not None:
@@ -278,11 +300,11 @@ class XMOSDeviceCntrl:
 
     @staticmethod
     def decode_mic_output_settings(data: bytes) -> MicOutputSettings:
-        if len(data) != 9:
+        if len(data) != 10:
             raise ValueError(
-                f"expected 9 bytes for mic output settings, got {len(data)}"
+                f"expected 10 bytes for mic output settings, got {len(data)}"
             )
-        unpacked = struct.unpack("<9B", data)
+        unpacked = struct.unpack("<10B", data)
         return MicOutputSettings(
             pack_extra_upsample_channels=unpacked[0],
             i2s_channel_map=(unpacked[1], unpacked[2]),
@@ -294,6 +316,7 @@ class XMOSDeviceCntrl:
                 unpacked[7],
                 unpacked[8],
             ),
+            overwrite_ref_with_ic_ns_output=unpacked[9],
         )
 
     @staticmethod
@@ -340,6 +363,34 @@ class XMOSDeviceCntrl:
         )
 
     @staticmethod
+    def decode_mic_input_packaged_snapshot(data: bytes) -> MicInputPackagedSnapshot:
+        if len(data) != 184:
+            raise ValueError(
+                f"expected 184 bytes for mic input packaged snapshot, got {len(data)}"
+            )
+        magic, guard_a, guard_b, frame_counter = struct.unpack_from("<4I", data, 0)
+        mic_map = struct.unpack_from("<4B", data, 16)
+        sample_count = struct.unpack_from("<I", data, 20)[0]
+        lanes = struct.unpack_from("<24i", data, 24)
+        mapped = struct.unpack_from("<16i", data, 120)
+
+        packaged_lane_samples = tuple(
+            tuple(lanes[i * 4 : (i + 1) * 4]) for i in range(6)
+        )
+        mapped_mic_samples = tuple(tuple(mapped[i * 4 : (i + 1) * 4]) for i in range(4))
+
+        return MicInputPackagedSnapshot(
+            magic=magic,
+            guard_a=guard_a,
+            guard_b=guard_b,
+            frame_counter=frame_counter,
+            mic_input_channel_map=tuple(mic_map),
+            sample_count=sample_count,
+            packaged_lane_samples=packaged_lane_samples,
+            mapped_mic_samples=mapped_mic_samples,
+        )
+
+    @staticmethod
     def _validate_mode(name: str, value: int, allowed: set[int]) -> int:
         if value not in allowed:
             choices = ", ".join(str(v) for v in sorted(allowed))
@@ -352,11 +403,13 @@ class XMOSDeviceCntrl:
         pack_extra_upsample_channels: bool | int | None = None,
         i2s_channel_map: Sequence[int] | None = None,
         upsample_channel_map: Sequence[int] | None = None,
+        overwrite_ref_with_ic_ns_output: bool | int | None = None,
     ) -> bytes:
         field_mask = 0
         pack_enable = 0
         i2s_map = [0, 0]
         packed_map = [0] * AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_PACKED_CHANNEL_COUNT
+        overwrite_ref = 0
 
         if pack_extra_upsample_channels is not None:
             field_mask |= AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_FIELD_PACK_ENABLE
@@ -382,11 +435,19 @@ class XMOSDeviceCntrl:
             )
             packed_map[:] = validated
 
+        if overwrite_ref_with_ic_ns_output is not None:
+            field_mask |= (
+                AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_FIELD_OVERWRITE_REF_WITH_IC_NS_OUTPUT
+            )
+            overwrite_ref = XMOSDeviceCntrl._validate_bool_u8(
+                "overwrite_ref_with_ic_ns_output", overwrite_ref_with_ic_ns_output
+            )
+
         if field_mask == 0:
             raise ValueError("at least one mic output setting must be provided")
 
         return struct.pack(
-            "<I9B3x",
+            "<I10B2x",
             field_mask,
             pack_enable,
             i2s_map[0],
@@ -397,6 +458,7 @@ class XMOSDeviceCntrl:
             packed_map[3],
             packed_map[4],
             packed_map[5],
+            overwrite_ref,
         )
 
     @staticmethod
@@ -509,7 +571,7 @@ class XMOSDeviceCntrl:
             AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_SETTINGS_RES_ID,
             AUDIO_PIPELINE_CONTROL.CMD_GET_SETTINGS,
             None,
-            9,
+            10,
         )
         if not ok or data is None:
             raise RuntimeError("Failed to read mic output settings")
@@ -521,11 +583,13 @@ class XMOSDeviceCntrl:
         pack_extra_upsample_channels: bool | int | None = None,
         i2s_channel_map: Sequence[int] | None = None,
         upsample_channel_map: Sequence[int] | None = None,
+        overwrite_ref_with_ic_ns_output: bool | int | None = None,
     ) -> bool:
         payload = self.encode_mic_output_partial(
             pack_extra_upsample_channels=pack_extra_upsample_channels,
             i2s_channel_map=i2s_channel_map,
             upsample_channel_map=upsample_channel_map,
+            overwrite_ref_with_ic_ns_output=overwrite_ref_with_ic_ns_output,
         )
         ok, _ = self.transfer(
             AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_SETTINGS_RES_ID,
@@ -619,6 +683,17 @@ class XMOSDeviceCntrl:
             raise RuntimeError("Failed to read mic input debug stats")
         return self.decode_mic_input_debug_stats(data)
 
+    def get_mic_input_packaged_snapshot(self) -> MicInputPackagedSnapshot:
+        ok, data = self.transfer(
+            AUDIO_PIPELINE_CONTROL.MIC_INPUT_SETTINGS_RES_ID,
+            AUDIO_PIPELINE_CONTROL.CMD_GET_MIC_INPUT_PACKAGED_SNAPSHOT,
+            None,
+            184,
+        )
+        if not ok or data is None:
+            raise RuntimeError("Failed to read mic input packaged snapshot")
+        return self.decode_mic_input_packaged_snapshot(data)
+
     def set_mic_input_settings_partial(
         self,
         *,
@@ -698,6 +773,17 @@ class XMOSDeviceCntrl:
         if write_payload:
             tx[3 : 3 + write_payload_len] = write_payload
 
+        self._transfer_count += 1
+        if self._transfer_count == 1:
+            log.info(
+                "SPI transfer #1 tx_len=%d header=%02x %02x %02x tx=%s",
+                len(tx),
+                tx[0],
+                tx[1],
+                tx[2],
+                self._fmt_bytes(tx),
+            )
+
         # Retry up to 3 times if device is busy
         for _ in range(5):
             rx = self._xfer(tx)
@@ -706,7 +792,11 @@ class XMOSDeviceCntrl:
                 return (False, None)
             # Not responding at all?
             if (rx[0] + rx[1] + rx[2]) == 0:
-                log.debug("transfer: no response (sum header == 0)")
+                log.warning(
+                    "transfer: no response (sum header == 0) tx=%s rx=%s",
+                    self._fmt_bytes(tx),
+                    self._fmt_bytes(rx),
+                )
                 return (False, None)
 
             # Transmission got accepted

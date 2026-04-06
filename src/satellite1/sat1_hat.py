@@ -173,16 +173,36 @@ class XMOS:
 
         self.set_flash_mode()
         try:
+            start = time.monotonic()
             time.sleep(0.5)
-            flasher = Flashrom.for_rpi_w25q64jv(timeout=600)
+            flasher = Flashrom.for_rpi_w25q64jv(timeout=1200, verbose=True)
             if not flasher.confirm_chip():
                 raise SystemExit("Flash chip not found or not accessible")
 
             if not img.exists():
                 raise ValueError(f"Image-file not found {img}")
 
-            log.info(f"Starting flashing of {img}")
-            flasher.write_image(img, verify=verify)
+            log.info("Starting flashing of %s (verify=%s)", img, verify)
+            flasher.write_image(img, strategy="region", verify=verify)
+            log.info("Flashing complete in %.2fs", time.monotonic() - start)
+            self._connection_state = "DETACHED"
+        finally:
+            self.unset_flash_mode()
+
+    def erase_flash(self) -> None:
+        from .components.flashrom_wrapper import Flashrom
+
+        self.set_flash_mode()
+        try:
+            start = time.monotonic()
+            time.sleep(0.5)
+            flasher = Flashrom.for_rpi_w25q64jv(timeout=1200, verbose=True)
+            if not flasher.confirm_chip():
+                raise SystemExit("Flash chip not found or not accessible")
+
+            log.info("Starting flash erase")
+            flasher.erase()
+            log.info("Erase complete in %.2fs", time.monotonic() - start)
             self._connection_state = "DETACHED"
         finally:
             self.unset_flash_mode()
@@ -225,6 +245,11 @@ class XMOS:
             kwargs["upsample_channel_map"] = mapping
         return self._cntrl.set_mic_output_settings_partial(**kwargs)
 
+    def set_mic_output_ref_overwrite(self, enabled: bool) -> bool:
+        return self._cntrl.set_mic_output_settings_partial(
+            overwrite_ref_with_ic_ns_output=enabled
+        )
+
     def get_speaker_settings(self) -> SpeakerSettings:
         return self._cntrl.get_speaker_settings()
 
@@ -248,6 +273,9 @@ class XMOS:
 
     def get_mic_input_debug_stats(self) -> MicInputDebugStats:
         return self._cntrl.get_mic_input_debug_stats()
+
+    def get_mic_input_packaged_snapshot(self):
+        return self._cntrl.get_mic_input_packaged_snapshot()
 
     def set_mic_input_gains(
         self, mic_gain: int | None = None, ref_gain: int | None = None

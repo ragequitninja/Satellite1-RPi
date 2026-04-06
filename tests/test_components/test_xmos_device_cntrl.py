@@ -288,18 +288,32 @@ def test_encode_mic_output_partial_contains_expected_mask_and_padding():
     assert len(payload) == 16
     field_mask = int.from_bytes(payload[:4], "little")
     assert field_mask == 0x1C
-    assert payload[4:13] == bytes([1, 1, 4, 0, 1, 2, 3, 4, 5])
-    assert payload[13:16] == b"\x00\x00\x00"
+    assert payload[4:14] == bytes([1, 1, 4, 0, 1, 2, 3, 4, 5, 0])
+    assert payload[14:16] == b"\x00\x00"
+
+
+def test_encode_mic_output_partial_sets_overwrite_field():
+    mod, _ = load_module_with_stubbed_spidev()
+    payload = mod.XMOSDeviceCntrl.encode_mic_output_partial(
+        overwrite_ref_with_ic_ns_output=False
+    )
+    field_mask = int.from_bytes(payload[:4], "little")
+    assert (
+        field_mask
+        == mod.AUDIO_PIPELINE_CONTROL.MIC_OUTPUT_FIELD_OVERWRITE_REF_WITH_IC_NS_OUTPUT
+    )
+    assert payload[13] == 0
 
 
 def test_decode_mic_output_settings_round_trip_shape():
     mod, _ = load_module_with_stubbed_spidev()
     settings = mod.XMOSDeviceCntrl.decode_mic_output_settings(
-        bytes([1, 0, 3, 0, 3, 0, 3, 0, 3])
+        bytes([1, 0, 3, 0, 3, 0, 3, 0, 3, 1])
     )
     assert settings.pack_extra_upsample_channels == 1
     assert settings.i2s_channel_map == (0, 3)
     assert settings.upsample_channel_map == (0, 3, 0, 3, 0, 3)
+    assert settings.overwrite_ref_with_ic_ns_output == 1
 
 
 def test_set_mic_output_settings_partial_sends_new_resource_command():
@@ -320,11 +334,12 @@ def test_get_mic_output_settings_reads_new_resource_command():
     dev.open()
     dev._spi.queue(
         [0x02, 0x00, 0x00],
-        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE, 0, 0, 3, 0, 3, 0, 3, 0, 3],
+        [mod.CntrlProto.RET_PAYLOAD_AVAILABLE, 0, 0, 3, 0, 3, 0, 3, 0, 3, 1],
     )
     settings = dev.get_mic_output_settings()
     assert settings.i2s_channel_map == (0, 3)
     assert settings.pack_extra_upsample_channels == 0
+    assert settings.overwrite_ref_with_ic_ns_output == 1
     dev.close()
 
 

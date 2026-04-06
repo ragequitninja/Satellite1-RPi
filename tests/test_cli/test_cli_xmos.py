@@ -55,6 +55,7 @@ def stub_xmos(monkeypatch):
                     "pack_extra_upsample_channels": 1,
                     "i2s_channel_map": (0, 3),
                     "upsample_channel_map": (0, 3, 4, 5, 6, 7),
+                    "overwrite_ref_with_ic_ns_output": 1,
                 },
             )()
 
@@ -72,6 +73,9 @@ def stub_xmos(monkeypatch):
             return True
 
         def set_mic_output_packing(self, enabled: bool, mapping=None):
+            return True
+
+        def set_mic_output_ref_overwrite(self, enabled: bool):
             return True
 
         def get_doa_raw(self):
@@ -424,13 +428,17 @@ def test_set_mic_pipeline_settings_mic_output_only(capsys, monkeypatch):
             calls["packing"] = (enabled, mapping)
             return True
 
+        def set_mic_output_ref_overwrite(self, enabled: bool):
+            calls["overwrite_ref"] = enabled
+            return True
+
     monkeypatch.setattr(x_cli, "XMOS", FakeXMOS, raising=True)
 
     rc, out = run(
         [
             "set-mic-pipeline-settings",
             "--json",
-            '{"mic_output":{"pack_extra_upsample_channels":1,"i2s_channel_map":[2,5],"upsample_channel_map":[0,1,2,3,4,5]}}',
+            '{"mic_output":{"pack_extra_upsample_channels":1,"i2s_channel_map":[2,5],"upsample_channel_map":[0,1,2,3,4,5],"overwrite_ref_with_ic_ns_output":0}}',
         ],
         capsys,
     )
@@ -439,6 +447,7 @@ def test_set_mic_pipeline_settings_mic_output_only(capsys, monkeypatch):
     assert out == "True"
     assert calls["channels"] == (2, 5)
     assert calls["packing"] == (True, [0, 1, 2, 3, 4, 5])
+    assert calls["overwrite_ref"] is False
 
 
 def test_set_mic_pipeline_settings_rejects_unknown_fields(capsys):

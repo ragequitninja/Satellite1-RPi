@@ -9,13 +9,22 @@ import sys
 import time
 from pathlib import Path
 
-from ..board import resolve_board
 from ..components.flashrom_wrapper import FlashromError
 from ..sat1_hat import XMOS
 
 log = logging.getLogger(__name__)
 
 MAX_MIC_INPUT_CHANNEL_MAP_LEN = 4
+
+
+def _timing_enabled() -> bool:
+    return bool(os.getenv("SAT1_CLI_TIMING", ""))
+
+
+def _print_timing(label: str, start: float) -> None:
+    if _timing_enabled():
+        elapsed = time.monotonic() - start
+        print(f"[TIMING] {label} -> {elapsed:.3f}s", file=sys.stderr)
 
 
 def _resolve_mic_input_channel_map(
@@ -89,6 +98,9 @@ def _mic_output_settings_to_dict(settings) -> dict:
         "pack_extra_upsample_channels": int(settings.pack_extra_upsample_channels),
         "i2s_channel_map": [int(v) for v in settings.i2s_channel_map],
         "upsample_channel_map": [int(v) for v in settings.upsample_channel_map],
+        "overwrite_ref_with_ic_ns_output": int(
+            settings.overwrite_ref_with_ic_ns_output
+        ),
     }
 
 
@@ -136,6 +148,7 @@ def _parse_mic_pipeline_patch(payload: dict) -> tuple[dict, dict]:
         "pack_extra_upsample_channels",
         "i2s_channel_map",
         "upsample_channel_map",
+        "overwrite_ref_with_ic_ns_output",
     }
     unknown_mic_output = sorted(set(mic_output_raw.keys()) - allowed_mic_output)
     if unknown_mic_output:
@@ -188,6 +201,17 @@ def _parse_mic_pipeline_patch(payload: dict) -> tuple[dict, dict]:
             mic_output_raw["upsample_channel_map"],
             6,
         )
+
+    if "overwrite_ref_with_ic_ns_output" in mic_output_raw:
+        val = mic_output_raw["overwrite_ref_with_ic_ns_output"]
+        if isinstance(val, bool):
+            mic_output_patch["overwrite_ref_with_ic_ns_output"] = int(val)
+        elif val in (0, 1):
+            mic_output_patch["overwrite_ref_with_ic_ns_output"] = int(val)
+        else:
+            raise SystemExit(
+                "mic_output.overwrite_ref_with_ic_ns_output must be 0/1 or bool"
+            )
 
     if not mic_input_patch and not mic_output_patch:
         raise SystemExit("set-mic-pipeline-settings needs at least one field to update")
@@ -245,10 +269,26 @@ def _stream_doa_samples(
     return 0
 
 
+def resolve_board(cli_board: str | None, config_path: Path | None = None) -> str:
+    from ..board import resolve_board as _resolve_board
+
+    return _resolve_board(cli_board, config_path)
+
+
 def _handle(args: argparse.Namespace) -> int:
     """Dispatch XMOS subcommands."""
-    board = resolve_board(getattr(args, "board", None), getattr(args, "config", None))
-    guarded_cmds = {"reset", "enable-flashing", "disable-flashing", "flash-firmware"}
+    board_arg = getattr(args, "board", None)
+    if board_arg:
+        board = board_arg
+    else:
+        board = resolve_board(None, getattr(args, "config", None))
+    guarded_cmds = {
+        "reset",
+        "enable-flashing",
+        "disable-flashing",
+        "flash-firmware",
+        "erase-flash",
+    }
     if board == "sq66" and args.cmd in guarded_cmds:
         raise SystemExit("XMOS reset/flashing controls are not available on sq66")
 
@@ -301,22 +341,60 @@ def _handle(args: argparse.Namespace) -> int:
         print(True)
         return 0
 
+    if args.cmd == "erase-flash":
+        try:
+            if os.geteuid() != 0:
+                print(
+                    "Warning: XMOS flashing usually requires elevated privileges; rerun with sudo if this fails.",
+                    file=sys.stderr,
+                )
+        except AttributeError:
+            pass
+
+        try:
+            xmos.erase_flash()
+        except FlashromError as exc:
+            msg = f"{exc.stderr}\n{exc.stdout}\n{exc}".lower()
+            if any(
+                hint in msg
+                for hint in (
+                    "permission denied",
+                    "operation not permitted",
+                    "/dev/spidev",
+                    "gpio",
+                )
+            ):
+                print(
+                    "Flash erase failed due to permissions. Try: sudo sat1 xmos erase-flash",
+                    file=sys.stderr,
+                )
+            raise SystemExit(f"erase-flash failed: {exc}") from exc
+        log.info("Flash erase completed: True")
+        print(True)
+        return 0
+
     # SPI Commands
     log.info("Init SPI")
+    t0 = time.monotonic()
     xmos.setup()
+    _print_timing("xmos.setup", t0)
     if args.cmd == "setup":
         log.info("XMOS setup: True")
         print(True)
         return 0
 
     if args.cmd == "read-firmware":
+        t0 = time.monotonic()
         fw = xmos.read_firmware()
+        _print_timing("xmos.read_firmware", t0)
         log.info("Firmware: %s", fw)
         print(fw)
         return 0 if fw is not None else 1
 
     if args.cmd == "read-status":
+        t0 = time.monotonic()
         st = xmos.read_status()
+        _print_timing("xmos.read_status", t0)
         log.info("Status: %s", _fmt_status(st) if st is not None else "None")
         print(_fmt_status(st) if st is not None else None)
         return 0 if st is not None else 1
@@ -448,6 +526,16 @@ def _handle(args: argparse.Namespace) -> int:
                     and ok
                 )
 
+            if "overwrite_ref_with_ic_ns_output" in mic_output_patch:
+                ok = (
+                    xmos.set_mic_output_ref_overwrite(
+                        enabled=bool(
+                            mic_output_patch["overwrite_ref_with_ic_ns_output"]
+                        )
+                    )
+                    and ok
+                )
+
         print(ok)
         return 0 if ok else 1
 
@@ -471,6 +559,10 @@ def _handle(args: argparse.Namespace) -> int:
 
     if args.cmd == "get-mic-input-debug-stats":
         print(xmos.get_mic_input_debug_stats())
+        return 0
+
+    if args.cmd == "get-mic-input-packaged-snapshot":
+        print(xmos.get_mic_input_packaged_snapshot())
         return 0
 
     if args.cmd == "set-mic-input-gains":
@@ -607,6 +699,11 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
         help="Get frame counter and mean-abs per mic input channel",
     )
 
+    sp.add_parser(
+        "get-mic-input-packaged-snapshot",
+        help="Get packaged mic input snapshot",
+    )
+
     mig = sp.add_parser("set-mic-input-gains", help="Set mic-input gain fields")
     mig.add_argument("--mic-gain", type=int, default=None)
     mig.add_argument("--ref-gain", type=int, default=None)
@@ -622,6 +719,8 @@ def attach_to_parser(parser: argparse.ArgumentParser) -> None:
     f = sp.add_parser("flash-firmware", help="Flash factory image")
     f.add_argument("img", type=Path)
     f.add_argument("--verify", action="store_true", help="Verify after flashing")
+
+    sp.add_parser("erase-flash", help="Erase XMOS flash (destructive)")
 
     parser.set_defaults(_handler=_handle)
 
