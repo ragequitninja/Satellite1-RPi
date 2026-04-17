@@ -6,12 +6,14 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from .config_load import DEFAULT_PATHS
-
 BoardId = Literal["satellite1", "sq66"]
 
 DEFAULT_BOARD: BoardId = "satellite1"
 log = logging.getLogger(__name__)
+DEFAULT_PATHS = [
+    Path.home() / ".config" / "satellite1" / "config.toml",
+    Path("/etc/satellite1.conf"),
+]
 
 
 def _normalize_board(value: str | None) -> BoardId | None:
