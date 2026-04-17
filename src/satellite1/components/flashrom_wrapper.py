@@ -7,6 +7,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -77,6 +78,7 @@ class Flashrom:
         flashrom_bin: str = "flashrom",
         use_sudo: bool | None = None,
         timeout: int = 120,
+        verbose: bool = False,
     ) -> None:
         self.programmer = programmer
         self.dev = dev
@@ -84,6 +86,7 @@ class Flashrom:
         self.chip = chip
         self.flashrom_bin = flashrom_bin
         self.timeout = timeout
+        self.verbose = verbose
         if use_sudo is None:
             try:
                 use_sudo = os.geteuid() != 0
@@ -107,13 +110,17 @@ class Flashrom:
         chosen = chip_override or self.chip
         if chosen:
             cmd += ["-c", chosen]
+        if self.verbose:
+            cmd.append("-V")
         return cmd
 
     def _run(
         self, extra: list[str], *, chip_override: str | None = None
     ) -> subprocess.CompletedProcess[str]:
         cmd = self._base_cmd(chip_override=chip_override) + extra
-        log.debug("flashrom cmd: %s", " ".join(shlex.quote(c) for c in cmd))
+        cmd_str = " ".join(shlex.quote(c) for c in cmd)
+        log.info("flashrom start: %s", cmd_str)
+        start = time.monotonic()
         try:
             cp = subprocess.run(
                 cmd,
@@ -129,6 +136,8 @@ class Flashrom:
                 stdout=_text_or_empty(e.stdout),
                 stderr=_text_or_empty(e.stderr),
             )
+        elapsed = time.monotonic() - start
+        log.info("flashrom done rc=%s (%.2fs)", cp.returncode, elapsed)
         log.debug(
             "flashrom rc=%s\nstdout:\n%s\nstderr:\n%s",
             cp.returncode,
@@ -140,6 +149,7 @@ class Flashrom:
     # ---------- detection ----------
     def detect(self, chip: str | None = None) -> DetectResult:
         """Run detection and parse candidate chips. Pass `chip` to force a specific definition for this call."""
+        log.info("flashrom detect start (chip=%s)", chip or self.chip)
         cp = self._run([], chip_override=chip)
         if cp.returncode != 0:
             raise FlashromError(
@@ -156,6 +166,16 @@ class Flashrom:
                 ChipInfo(name=name, size_kb=int(size_kb), interface=iface.strip())
             )
         multiple = _MULTI_RE.search(cp.stdout + "\n" + cp.stderr) is not None
+        if candidates:
+            log.info(
+                "flashrom detect candidates=%s multiple=%s",
+                ", ".join(
+                    f"{c.name} ({c.size_kb} kB, {c.interface})" for c in candidates
+                ),
+                multiple,
+            )
+        else:
+            log.info("flashrom detect found no candidates")
         return DetectResult(candidates=candidates, multiple=multiple)
 
     def confirm_chip(self, chip: str | None = None) -> bool:
@@ -163,6 +183,7 @@ class Flashrom:
         chosen = chip or self.chip
         if not chosen:
             raise ValueError("No chip specified; pass chip= or set self.chip first.")
+        log.info("flashrom confirm chip=%s", chosen)
         cp = self._run([], chip_override=chosen)
         ok = cp.returncode == 0
         if not ok:
@@ -194,7 +215,7 @@ class Flashrom:
         if not res.candidates:
             raise FlashromError("No flash chip detected")
         size_b = res.candidates[0].size_kb * 1024
-        log.debug("Detected chip size: %d bytes (%s)", size_b, res.candidates[0].name)
+        log.info("Detected chip size: %d bytes (%s)", size_b, res.candidates[0].name)
         return size_b
 
     # ---------- raw operations ----------
@@ -228,6 +249,7 @@ class Flashrom:
         self, image: Path | str, *, verify: bool = True, chip: str | None = None
     ) -> None:
         image = Path(image)
+        log.info("flashrom write image=%s verify=%s", image, verify)
         args = ["-w", str(image)]
         if not verify:
             args.append("-n")
@@ -281,6 +303,15 @@ class Flashrom:
         if not image.exists():
             raise FileNotFoundError(image)
 
+        log.info(
+            "write_image strategy=%s image=%s size=%d verify=%s chip=%s",
+            strategy,
+            image,
+            image.stat().st_size,
+            verify,
+            chip or self.chip,
+        )
+
         if strategy not in ("pad", "region"):
             raise ValueError("strategy must be 'pad' or 'region'")
 
@@ -293,6 +324,7 @@ class Flashrom:
             # Create padded file (either at padded_out or a temp next to image)
             if padded_out is None:
                 padded_out = image.with_suffix(image.suffix + ".padded.bin")
+            log.info("pad image -> %s (target size=%d)", padded_out, size_b)
             self._pad_file(image, padded_out, size_b)
             try:
                 self.write(padded_out, verify=verify, chip=chip)
@@ -327,6 +359,22 @@ class Flashrom:
                 args.append("-v")
             cp = self._run(args, chip_override=chip)
             if cp.returncode != 0:
+                err = (cp.stderr or "") + "\n" + (cp.stdout or "")
+                if "Image size" in err and "expected size" in err:
+                    log.warning(
+                        "Region write rejected by flashrom (size mismatch); "
+                        "falling back to pad strategy with 0xFF."
+                    )
+                    return self.write_image(
+                        image,
+                        strategy="pad",
+                        verify=verify,
+                        chip=chip,
+                        chip_size_bytes=chip_size_bytes,
+                        erase_before=erase_before,
+                        keep_padded=keep_padded,
+                        padded_out=padded_out,
+                    )
                 raise FlashromError(
                     "flashrom regioned write failed",
                     returncode=cp.returncode,
@@ -342,10 +390,23 @@ class Flashrom:
     # ---------- convenience ctor ----------
     @classmethod
     def for_rpi_w25q64jv(
-        cls, *, spispeed_khz: int = 1000, dev: str = "/dev/spidev0.0", **kw
+        cls,
+        *,
+        spispeed_khz: int = 10000,
+        dev: str = "/dev/spidev0.0",
+        timeout: int = 1200,
+        verbose: bool = True,
+        **kw,
     ) -> "Flashrom":
         """Config for Winbond W25Q64JV on Raspberry Pi SPI0/CE0."""
-        return cls(dev=dev, spispeed_khz=spispeed_khz, chip="W25Q64JV-.Q", **kw)
+        return cls(
+            dev=dev,
+            spispeed_khz=spispeed_khz,
+            chip="W25Q64JV-.Q",
+            timeout=timeout,
+            verbose=verbose,
+            **kw,
+        )
 
     # ---------- small util ----------
     @staticmethod
@@ -354,5 +415,8 @@ class Flashrom:
         if len(data) > size_bytes:
             raise ValueError("Source image larger than target size")
         pad = b"\xff" * (size_bytes - len(data))
+        log.info(
+            "pad_file src=%s (%d B) dst=%s (%d B)", src, len(data), dst, size_bytes
+        )
         dst.write_bytes(data + pad)
         log.debug("Padded %s (%d B) -> %s (%d B)", src, len(data), dst, size_bytes)

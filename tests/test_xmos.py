@@ -211,8 +211,11 @@ def test_flash_firmware_unsets_flash_mode_on_write_error(monkeypatch, tmp_path):
         def confirm_chip(self) -> bool:
             return True
 
-        def write_image(self, _img, verify: bool = False) -> None:
+        def write_image(
+            self, _img, verify: bool = False, strategy: str | None = None
+        ) -> None:
             del verify
+            del strategy
             raise RuntimeError("write failed")
 
     monkeypatch.setattr(
