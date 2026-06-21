@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+AUDIO_USER=satellite1
+
+case "$1" in
+    purge)
+        # Tear down the dedicated audio-session user on purge.
+        rm -f "/var/lib/systemd/linger/$AUDIO_USER"
+        loginctl disable-linger "$AUDIO_USER" >/dev/null 2>&1 || true
+        if getent passwd "$AUDIO_USER" >/dev/null 2>&1; then
+            deluser --system "$AUDIO_USER" >/dev/null 2>&1 || true
+        fi
+        # NOTE: the PipeWire/WirePlumber user units were enabled with
+        # `systemctl --global` and are intentionally left enabled -- they are
+        # harmless and may be relied on by other (login) users.
+        ;;
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        :
+        ;;
+esac
+
+exit 0

@@ -86,4 +86,8 @@ for w in $WRAPPERS; do
 done
 hash -r 2>/dev/null || true
 
+# Injects debhelper-generated snippets, incl. dh_installsystemd enabling
+# satellite1-init.service (without this token the enable is silently dropped).
+#DEBHELPER#
+
 exit 0

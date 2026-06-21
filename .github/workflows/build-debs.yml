@@ -1,0 +1,98 @@
+name: Build debs & publish apt repo
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  CODENAME: trixie
+  COMPONENT: main
+  ARCH: arm64
+
+# Only one publish at a time; don't cancel an in-progress kernel build.
+concurrency:
+  group: apt-repo
+  cancel-in-progress: false
+
+jobs:
+  build-debs:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # setuptools-scm needs full history + tags
+
+      - name: Build kernel deb
+        run: make kernel-pkg OUT_DIR="$PWD/build-assets"
+
+      - name: Build rpi-setup deb
+        run: make rpi-setup-deb OUT_DIR="$PWD/build-assets"
+
+      - name: Build SDK deb
+        run: make deb OUT_DIR="$PWD/build-assets" ALLOW_DIRTY=1
+
+      - name: Collect debs
+        run: |
+          mkdir -p dist
+          find . -name '*.deb' -exec cp -v {} dist/ \;
+          ls -1 dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debs
+          path: dist/*.deb
+          if-no-files-found: error
+
+  publish:
+    needs: build-debs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: debs
+          path: incoming
+
+      - name: Install tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y reprepro gnupg
+
+      - name: Import GPG signing key
+        run: |
+          echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Build signed apt repo
+        env:
+          KEY_ID: ${{ secrets.APT_GPG_KEY_ID }}
+        run: |
+          mkdir -p repo/conf
+          cat > repo/conf/distributions <<EOF
+          Origin: Satellite1-RPi
+          Label: Satellite1-RPi
+          Codename: ${CODENAME}
+          Architectures: ${ARCH}
+          Components: ${COMPONENT}
+          Description: Satellite1 RPi apt repository
+          SignWith: ${KEY_ID}
+          EOF
+          for deb in incoming/*.deb; do
+            echo "Adding $deb"
+            reprepro -b repo includedeb "${CODENAME}" "$deb"
+          done
+          # Export the public key so clients can trust the repo.
+          gpg --armor --export "${KEY_ID}" > repo/KEY.gpg
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo

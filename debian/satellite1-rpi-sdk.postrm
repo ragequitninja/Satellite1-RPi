@@ -15,4 +15,7 @@ case "$1" in
     ;;
 esac
 
+# Injects debhelper-generated snippets (dh_installsystemd disable/purge cleanup).
+#DEBHELPER#
+
 exit 0

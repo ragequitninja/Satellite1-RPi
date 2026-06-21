@@ -3,7 +3,7 @@ PLATFORM ?= linux/arm64
 
 # Example image for building deb packages
 DEB_IMAGE_NAME   ?= satellite1-deb-builder
-DEB_DOCKERFILE   ?= Dockerfile.deb.bookworm.arm64
+DEB_DOCKERFILE   ?= Dockerfile.deb.trixie.arm64
 DEB_BUILD_CTX    ?= $(PWD)
 
 .PHONY: help deb-image

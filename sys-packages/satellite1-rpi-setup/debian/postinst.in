@@ -65,6 +65,42 @@ ensure_overlay_line() {
 
 case "$1" in
     configure)
+        # ----- PipeWire audio session user -------------------------------
+        # All Satellite1 audio goes through PipeWire/WirePlumber, which are
+        # per-user services. Create a dedicated non-login system user and keep
+        # its systemd session alive via linger, so PipeWire runs from boot with
+        # no interactive login. Every audio consumer (wyoming-satellite,
+        # recorder, wakeword) connects to THIS user's PipeWire socket
+        # (/run/user/<uid>/pipewire-0). See PLAN-upgrade.md.
+        AUDIO_USER=satellite1
+        AUDIO_HOME=/var/lib/satellite1
+
+        if ! getent passwd "$AUDIO_USER" >/dev/null 2>&1; then
+            adduser --system --group --home "$AUDIO_HOME" \
+                    --shell /usr/sbin/nologin "$AUDIO_USER"
+            echo "satellite1-rpi-setup: created system user $AUDIO_USER"
+        fi
+        # Grant access to the sound hardware (/dev/snd).
+        adduser "$AUDIO_USER" audio >/dev/null 2>&1 || true
+
+        # Enable linger (PipeWire session starts at boot, no login). Touch the
+        # marker file directly so this also works offline, e.g. during the
+        # pi-gen image build where logind isn't running; also try loginctl for
+        # immediate effect on a live system.
+        mkdir -p /var/lib/systemd/linger
+        touch "/var/lib/systemd/linger/$AUDIO_USER"
+        loginctl enable-linger "$AUDIO_USER" >/dev/null 2>&1 || true
+
+        # Enable the PipeWire/WirePlumber user units for all user managers
+        # (incl. the lingering satellite1 user). Writes symlinks under
+        # /etc/systemd/user, so it works offline. Some may already be preset-
+        # enabled on Trixie; '|| true' keeps postinst robust either way.
+        systemctl --global enable \
+            pipewire.service pipewire.socket \
+            pipewire-pulse.service pipewire-pulse.socket \
+            wireplumber.service >/dev/null 2>&1 || true
+
+        # ----- Boot firmware / overlays ----------------------------------
         # Sanity check: config.txt must exist
         if [ ! -f "$CFG" ]; then
             echo "satellite1-rpi-setup: config.txt not found at $CFG" >&2

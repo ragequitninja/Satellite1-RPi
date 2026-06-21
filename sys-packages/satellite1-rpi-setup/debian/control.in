@@ -12,18 +12,25 @@ Homepage: https://github.com/futureproofhomes/Satellite1-RPi
 
 Package: @PACKAGE_NAME@
 Architecture: @ARCH@
-Depends: 
+Depends:
   ${misc:Depends},
   @KERNEL_PKG@,
-  python3-venv, 
-  python3-pip, 
+  python3-venv,
+  python3-pip,
   flashrom,
-  libasound2-plugins
+  libasound2-plugins,
+  pipewire,
+  pipewire-alsa,
+  wireplumber,
+  adduser
 Recommends:
   alsa-utils,
-  lm-sensors  
-Description: Satellite1 I2S overlay, ALSA config, and boot-time I²C init
- Installs Satellite1 device-tree overlay, ALSA PCM config, and a systemd
- oneshot service that initializes the IO expander and DAC at boot.
+  lm-sensors,
+  pipewire-pulse,
+  rtkit
+Description: Satellite1 I2S overlay, PipeWire audio config, and boot-time I²C init
+ Installs Satellite1 device-tree overlay, a WirePlumber rule that plumbs the
+ I2S card into PipeWire, and a systemd oneshot service that initializes the IO
+ expander and DAC at boot.
 
 

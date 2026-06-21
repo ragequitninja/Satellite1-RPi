@@ -2,7 +2,7 @@
 
 IMG_NAME='satellite1-rpi'
 TARGET_ARCH=arm64
-RELEASE='bookworm'
+RELEASE='trixie'
 
 # Make sure our custom stage runs after stage2
 STAGE_LIST="stage0 stage1 stage2 stage-sat1"
