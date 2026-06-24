@@ -33,7 +33,7 @@ ifndef ALLOW_DIRTY
 	  exit 1; \
 	fi
 else
-    @echo "Skipping clean-tree check (ALLOW_DIRTY=$(ALLOW_DIRTY))"
+	@echo "Skipping clean-tree check (ALLOW_DIRTY=$(ALLOW_DIRTY))"
 endif
 
 .PHONY: print-meta

@@ -29,6 +29,9 @@ jobs:
         with:
           fetch-depth: 0   # setuptools-scm needs full history + tags
 
+      - name: Install build metadata tooling
+        run: python3 -m pip install --upgrade setuptools-scm
+
       - name: Build kernel deb
         run: make kernel-pkg OUT_DIR="$PWD/build-assets"
 
